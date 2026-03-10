@@ -79,6 +79,8 @@ def testMacd():
     plt.tight_layout()
     plt.show()
 
+    #量化交易提交git测试
+
 
 
 
