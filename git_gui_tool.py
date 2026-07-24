@@ -8,16 +8,29 @@ from tkinter import messagebox, simpledialog, scrolledtext
 import subprocess
 import sys
 import os
+import shutil
 
 # 切换到项目目录
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
-# Git 路径（根据您的系统调整）
-GIT_PATH = r"D:\Git\cmd\git.exe"
+# Git 路径自动探测：依次尝试常见安装位置，最后用系统 PATH 兜底
+GIT_CANDIDATES = [
+    r"C:\Program Files\Git\cmd\git.exe",
+    r"C:\Program Files\Git\mingw64\bin\git.exe",
+    r"C:\Program Files (x86)\Git\cmd\git.exe",
+    r"D:\Git\cmd\git.exe",
+]
+GIT_PATH = next((p for p in GIT_CANDIDATES if os.path.exists(p)), None)
+if GIT_PATH is None:
+    GIT_PATH = shutil.which("git")
 
 
 def run_git(cmd):
-    """运行 git 命令"""
+    """运行 git 命令，返回 (是否成功, stdout, stderr)。
+    注意：git 不存在或执行失败时 success=False，调用方必须处理失败分支，
+    否则会把"git 出错"误报成"没有更改"（2026-07 踩过的坑）。"""
+    if GIT_PATH is None:
+        return False, "", "找不到 git.exe，请确认已安装 Git for Windows"
     full_cmd = cmd.replace('git ', f'"{GIT_PATH}" ', 1)
     result = subprocess.run(full_cmd, shell=True, capture_output=True)
     stdout = result.stdout.decode('utf-8', errors='ignore') if result.stdout else ""
@@ -26,11 +39,9 @@ def run_git(cmd):
 
 
 def get_status():
-    """获取当前状态"""
-    success, stdout, _ = run_git("git status --porcelain")
-    if success:
-        return stdout.strip()
-    return ""
+    """获取当前状态。返回 (是否成功, 状态文本, 错误信息)"""
+    success, stdout, stderr = run_git("git status --porcelain")
+    return success, stdout.strip(), stderr
 
 
 def get_branch():
@@ -43,7 +54,10 @@ def get_branch():
 
 def commit(push_after=False):
     """提交更改"""
-    status = get_status()
+    ok, status, err = get_status()
+    if not ok:
+        messagebox.showerror("错误", f"git 状态检查失败（不是没有更改！）:\n{err}")
+        return False
     if not status:
         messagebox.showinfo("提示", "没有需要提交的更改")
         return False
@@ -158,9 +172,11 @@ def reset():
 
 def update_status_label():
     """更新状态标签"""
-    status_text = get_status()
+    ok, status_text, err = get_status()
     branch = get_branch()
-    if status_text:
+    if not ok:
+        status_label.config(text=f"分支: {branch} | git 出错: {err[:40]}", fg="red")
+    elif status_text:
         status_label.config(text=f"分支: {branch} | 有未提交的更改", fg="orange")
     else:
         status_label.config(text=f"分支: {branch} | 工作区干净", fg="green")
