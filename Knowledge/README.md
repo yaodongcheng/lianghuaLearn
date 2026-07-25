@@ -8,6 +8,7 @@
 | [technical_indicators.md](technical_indicators.md) | MACD、KDJ、MA、RSI、BOLL 等指标的标准公式与常见用法 | 实现或修改任何指标之前 |
 | [data_sources.md](data_sources.md) | akshare 数据接口、复权概念、A股/港股交易规则 | 获取数据、处理数据时 |
 | [funds.md](funds.md) | 场外基金（支付宝渠道）交易规则、费用、对策略设计的影响 | ⭐ 做任何基金相关策略前必读 |
+| [exit_rules.md](exit_rules.md) | 止盈/止损/移动止盈的区别、真实数据模拟结论、离场纪律模板 | ⭐ 设计任何"卖出"规则前必读 |
 | [metrics.md](metrics.md) | 年化收益、最大回撤、夏普比率等绩效指标的标准算法与"什么算好"的直觉参考 | 评估回测结果时 |
 
 ## 维护约定
