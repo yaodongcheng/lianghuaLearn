@@ -234,6 +234,24 @@ def fetch_fund_nav(code, force_refresh=False):
     raise RuntimeError(f"基金 {code} 净值下载失败：{last_err}")
 
 
+def fetch_fund_rank(code):
+    """
+    基金同类排名快照（东财 F10，近三月口径）：返回 (同类排名, 全市场排名)，失败返回 None。
+
+    为什么只有排名没有"同类平均涨幅"：支付宝/天天基金展示的"同类平均"曲线是平台
+    按基金分类算的均值序列，免费接口拿不到稳定的逐日数据（2026-07-25 实测：
+    fund_open_fund_info_em 的"同类排名走势"只返回排名，不含平均涨幅）。
+    所以用排名作为"同类定位"的替代参考：同类排名靠前 ≈ 跑赢同类平均。
+    不做缓存：单次调用数据量小，且排名每天变。
+    """
+    try:
+        df = ak.fund_open_fund_info_em(symbol=code, indicator="同类排名走势")
+        last = df.iloc[-1]
+        return (int(last["同类型排名-每日近三月排名"]), int(last["总排名-每日近三月排名"]))
+    except Exception:
+        return None
+
+
 def fetch_spot_bar(symbol="00700"):
     """
     拉港股【当日】实时快照，组装成一根日 K（6 列格式同 fetch_daily）。

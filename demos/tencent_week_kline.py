@@ -8,6 +8,11 @@ tencent_week_kline.py — 用课程文件 lianghuaLearn.py 里 testPandas_mplfin
      所以这里把它的【流程和样式】完整复刻过来（列名处理 → 统计 → 涨跌幅 → 同款样式画图）。
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让根目录的轮子可 import
+sys.stdout.reconfigure(encoding="utf-8")  # Windows 中文控制台默认 GBK，✓ 等字符会报编码错
+
 import matplotlib
 matplotlib.use("Agg")  # 无界面后端：存 PNG 不弹窗（课程里是 plt.show() 弹窗）
 

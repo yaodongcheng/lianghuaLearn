@@ -1,0 +1,9 @@
+# Python 字节码缓存：每次运行 .py 都会自动生成，属于"运行垃圾"，不该进 git
+__pycache__/
+*.pyc
+
+# data/ 下的产物：PNG 一条命令重画；行情/净值 CSV 是缓存，fetch_data.py 可重新下载
+# 例外：demo.csv 是课程练习的配套数据（lianghuaLearn.py 要读），属于源数据，必须保留
+data/*.png
+data/*.csv
+!data/demo.csv

@@ -102,8 +102,34 @@ RSI = 100 − 100 / (1 + RS)
 
 ---
 
+## BIAS（乖离率）
+
+**公式**（常用 N=6, 12, 20）：
+```
+BIAS(N) = (当日收盘 − N日移动平均价) / N日移动平均价 × 100%
+```
+
+**含义**：价格偏离均线的百分比。MA(N) 可理解为"最近 N 天买入者的平均成本"，
+BIAS 为负且绝对值大 = 现价明显低于近期平均成本 = 短期超跌（恐慌）。
+对"跌得快"敏感（均线是平均值，价格急杀会瞬间偏离它），天然捕捉短期超跌；
+与"距前高回撤"不同——后者对"跌得久"也敏感，容易在阴跌途中反复触发。
+
+**常见信号**（指数口径，个股波动大阈值需放宽）：BIAS20 ≤ -6% 超卖；BIAS20 ≥ +6% 超买。
+
+**实测参考**（2026-07-25，上证/沪深300 抄底回测）：BIAS20≤-6% 是六种超跌定义中
+综合最佳（详见 [zhihu/吃超跌恐慌修复策略.md](zhihu/吃超跌恐慌修复策略.md)）。
+
+---
+
 ## 校验备注
+> 2026-07-25 起指标统一实现在 [quant/indicators.py](../quant/indicators.py)（plans/07 框架抽取），
+> wheels.md 里的 cal_macd / cal_kdj 为早期课程版（输入列名不同），新代码一律用 quant 版。
+
 | 指标 | 本项目实现 | 校验日期 | 状态 |
 |---|---|---|---|
-| MACD | wheels.md / cal_macd | 2026-07-24 | ✅ 与标准一致 |
-| KDJ | wheels.md / cal_kdj | 2026-07-24 | ✅ 与标准一致 |
+| MACD | quant/indicators.py / cal_macd | 2026-07-24 | ✅ 与标准一致 |
+| KDJ | quant/indicators.py / cal_kdj | 2026-07-24 | ✅ 与标准一致 |
+| RSI | quant/indicators.py / cal_rsi（Wilder 平滑 `ewm(alpha=1/n)`） | 2026-07-25 | ✅ 按标准公式实现 |
+| BIAS | quant/indicators.py / cal_bias | 2026-07-25 | ✅ 按标准公式实现 |
+| BOLL | quant/indicators.py / cal_boll（样本标准差 ddof=1） | 2026-07-25 | ✅ 按标准公式实现 |
+| MA | quant/indicators.py / cal_ma | 2026-07-25 | ✅ 按标准公式实现 |

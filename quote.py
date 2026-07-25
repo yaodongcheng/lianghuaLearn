@@ -17,12 +17,16 @@ quote.py — 自助行情查询工具（股票/港股/指数/基金，名称或�
 
     区间与对比：
     python quote.py 腾讯 --days 365              # 近一年 K 线
-    python quote.py 025209 --days 365 --bench    # 近一年收益率 vs 沪深300（一张图）
-    python quote.py 013286 --bench 上证指数      # 全区间收益率 vs 指定基准
+    python quote.py 025209 --days 365            # 基金图表只看近一年
+    python quote.py 014143 --bench 中证500       # 换对比基准（指数别名或 6 位指数代码）
+    基金默认自动对比沪深300：区间收益一览（近1周/1月/3月/6月/1年/成立以来）
+    + 近10日逐日涨跌幅对比 + 三面板图（净值 / 累计收益率 / 每日涨跌幅）。
 
-输出：最近 10 行数据 + 关键数字 + 一张图（存 data/quote_*.png，会打印路径）。
+    图保存到 data/quote_*.png 并自动打开（--no-open 可关闭）。
 """
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
@@ -33,7 +37,7 @@ import mplfinance as mpf
 import pandas as pd
 import requests
 
-from fetch_data import DATA_DIR, fetch_daily, fetch_fund_nav, fetch_spot_bar
+from fetch_data import DATA_DIR, fetch_daily, fetch_fund_nav, fetch_fund_rank, fetch_spot_bar
 from plot_kline import my_style  # 复用 K 线样式轮子
 
 plt.rcParams["font.sans-serif"] = ["SimHei", "Microsoft YaHei"]
@@ -211,40 +215,153 @@ def _window(df, days):
     return df[df["date"] >= df["date"].iloc[-1] - pd.Timedelta(days=days)].reset_index(drop=True)
 
 
-def show_fund(code, name, days=None, bench_code=None):
-    df = fetch_fund_nav(code)
-    w = _window(df, days)
-    print(f"\n最近 10 天净值（{name} {code}）：")
-    print(w.tail(10).to_string(index=False))
-    latest = w.iloc[-1]
-    print(f"\n最新净值 {latest['nav']:.4f}（{latest['date']:%Y-%m-%d}，当晚才公布，白天看到的是估值）")
+def _open_image(path):
+    """用系统默认看图软件打开图片。失败只提示一句，不影响主流程。"""
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", path])
+        else:
+            subprocess.Popen(["xdg-open", path])
+    except Exception as e:
+        print(f"（图片自动打开失败：{e}，请按上面的路径手动打开）")
 
-    out = DATA_DIR / f"quote_fund_{code}.png"
-    if bench_code:
-        # 叠加基准：对齐日期、双方归一化为"区间收益率"
-        idx = fetch_daily("idx", bench_code, start=w["date"].iloc[0].strftime("%Y%m%d"))
-        m = w[["date", "nav"]].merge(idx[["date", "close"]], on="date", how="inner")
-        bench_name = _display_name("idx", bench_code)
-        ret_f = m["nav"] / m["nav"].iloc[0] - 1
-        ret_b = m["close"] / m["close"].iloc[0] - 1
-        print(f"区间（{m['date'].iloc[0]:%Y-%m-%d} 起）：基金 {ret_f.iloc[-1]:+.1%}    "
-              f"{bench_name} {ret_b.iloc[-1]:+.1%}    超额 {ret_f.iloc[-1] - ret_b.iloc[-1]:+.1%}")
-        _plot_return_compare(m["date"], ret_f, f"{name}（{code}）", ret_b, bench_name,
-                             f"{name} vs {bench_name}（区间收益率对比）", out)
+
+def _pct(x):
+    """收益率（小数）格式化为 +x.x%；None/NaN 显示为 —"""
+    return "—" if x is None or pd.isna(x) else f"{x:+.1%}"
+
+
+# 基金"区间收益一览"的固定窗口（自然日口径，和支付宝/天天基金的展示习惯一致）
+FUND_PERIODS = [("近1周", 7), ("近1月", 30), ("近3月", 91),
+                ("近6月", 182), ("近1年", 365), ("成立以来", None)]
+
+
+def _fund_daily_ret(df):
+    """基金日收益率（小数）。优先用官方"日增长率"列（含分红处理，最准，见 funds.md），
+    缺失或旧缓存没有该列时用单位净值 pct_change 兜底。"""
+    fallback = df["nav"].pct_change() * 100
+    if "daily_ret" in df.columns:
+        r = pd.to_numeric(df["daily_ret"], errors="coerce").fillna(fallback)
     else:
-        if len(w) > 20:
-            print(f"近 20 日：{latest['nav'] / w['nav'].iloc[-21] - 1:+.1%}    "
-                  f"成立以来：{latest['nav'] / df['nav'].iloc[0] - 1:+.1%}")
-        fig, ax = plt.subplots(figsize=(12, 4.5))
-        ax.plot(w["date"], w["nav"], linewidth=1.3)
-        ax.set_title(f"{name}（{code}）单位净值")
-        ax.grid(linestyle="-.", alpha=0.5)
-        fig.savefig(out, dpi=120, bbox_inches="tight")
-        plt.close(fig)
-    print(f"图已保存：{out}")
+        r = fallback
+    return (r.fillna(0) / 100).reset_index(drop=True)
 
 
-def show_stock(kind, code, name, refresh=False, days=None, bench_code=None):
+def show_fund(code, name, days=None, bench_code=None, open_img=True):
+    df = fetch_fund_nav(code).sort_values("date").reset_index(drop=True)
+    df["r"] = _fund_daily_ret(df)
+
+    # 基金默认对比沪深300。为什么不做"行业指数"自动对比：主动基金没有官方"所属行业
+    # 指数"（持仓一季度才披露一次且会变）；实测东财同类接口只给排名、不给同类平均涨幅，
+    # 所以同类定位用排名，行业对比交给 --bench 手动指定（见 Knowledge/funds.md）
+    bench_is_default = bench_code is None
+    if bench_code is None:
+        bench_code = "000300"
+    bench = None
+    try:
+        bench = fetch_daily("idx", bench_code, start=df["date"].iloc[0].strftime("%Y%m%d"))
+    except Exception as e:
+        print(f"⚠ 基准指数 {bench_code} 拉取失败（{type(e).__name__}: {str(e)[:60]}），本次只看基金自身")
+    bench_name = _display_name("idx", bench_code)
+
+    # ---- 头部信息 ----
+    try:
+        ftype = _fund_list().loc[lambda f: f["基金代码"] == code, "基金类型"].iloc[0]
+    except Exception:
+        ftype = ""
+    latest = df.iloc[-1]
+    bench_note = "（默认，--bench 可换）" if bench_is_default and bench is not None else ""
+    print(f"\n{name}（{code}）{ftype}    对比基准：{bench_name}{bench_note}")
+    print(f"最新净值 {latest['nav']:.4f}（{latest['date']:%Y-%m-%d}，当晚才公布，白天看到的是估值）")
+
+    # ---- 区间收益一览（支付宝风格）：基金按日增长率连乘（最准），基准按收盘价 ----
+    last, first = df["date"].iloc[-1], df["date"].iloc[0]
+    print(f"\n区间收益一览（截至 {last:%Y-%m-%d}）：")
+    for label, span in FUND_PERIODS:
+        start = first if span is None else last - pd.Timedelta(days=span)
+        if start < first:
+            print(f"  {label}：成立不足，暂无")
+            continue
+        fret = (1 + df.loc[df["date"] >= start, "r"]).prod() - 1
+        line = f"  {label}：基金 {_pct(fret)}"
+        if bench is not None:
+            bsub = bench[bench["date"] >= start]
+            bret = (bsub["close"].iloc[-1] / bsub["close"].iloc[0] - 1) if len(bsub) >= 2 else None
+            line += f"    {bench_name} {_pct(bret)}"
+            if bret is not None:
+                line += f"    超额 {_pct(fret - bret)}"
+        print(line)
+
+    # ---- 近 10 日逐日涨跌幅对比 ----
+    print("\n近 10 日逐日涨跌幅：")
+    tail = df.tail(10)[["date", "nav", "r"]]
+    if bench is not None:
+        b = bench[["date", "close"]].copy()
+        b["br"] = b["close"].pct_change()
+        tail = tail.merge(b[["date", "br"]], on="date", how="left")
+    for _, row in tail.iterrows():
+        line = f"  {row['date']:%Y-%m-%d}  净值 {row['nav']:.4f}  基金 {row['r']:+.2%}"
+        if "br" in row.index:
+            line += f"    {bench_name} {_pct(row['br'])}"
+        print(line)
+
+    # ---- 同类排名（"同类平均涨幅"拿不到，用排名做同类定位参考）----
+    rk = fetch_fund_rank(code)
+    if rk:
+        print(f"\n近三月同类排名：第 {rk[0]} 名（全市场第 {rk[1]} 名，东财口径）——排名靠前 ≈ 跑赢同类")
+
+    # ---- 图：上=单位净值，下=窗口内累计收益率对比 ----
+    w = _window(df, days)
+    if len(w) < 2:
+        w = df
+    out = DATA_DIR / f"quote_fund_{code}.png"
+    fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(12, 9), sharex=True)
+    ax1.plot(w["date"], w["nav"], linewidth=1.3)
+    ax1.set_title(f"{name}（{code}）单位净值")
+    ax1.grid(linestyle="-.", alpha=0.5)
+
+    m = w[["date", "r"]]
+    if bench is not None:
+        mb = m.merge(bench[["date", "close"]], on="date", how="inner")
+        if len(mb) >= 2:  # 日期对不上（如 QDII 与 A 股假期错位）就退回只画基金
+            m = mb
+    cum = (1 + m["r"]).cumprod()
+    ret_f = cum / cum.iloc[0] - 1
+    ax2.plot(m["date"], ret_f * 100, label=name, linewidth=1.5)
+    if "close" in m.columns:
+        ret_b = m["close"] / m["close"].iloc[0] - 1
+        ax2.plot(m["date"], ret_b * 100, label=bench_name, linewidth=1.2, alpha=0.85)
+    ax2.axhline(0, color="gray", linewidth=0.8, linestyle="--")
+    ax2.legend()
+    span_txt = f"近 {days} 天" if days else "全部历史"
+    ax2.set_title(f"区间累计收益率（{span_txt}，从 0% 起步）")
+    ax2.set_ylabel("%")
+    ax2.grid(linestyle="-.", alpha=0.5)
+
+    # 每日涨跌幅：基金画柱（红涨绿跌，A 股习惯），基准画线——都是 % 单位，可以叠。
+    # 这张图的看点是"波动"：柱子越高/越深说明每天上蹿下跳越厉害，
+    # 两只累计收益相同的基金，波动小的那只持有体验好得多（夏普比率的直观来源）
+    fr = m["r"] * 100
+    ax3.bar(m["date"], fr, width=1.0,
+            color=["#d62728" if x >= 0 else "#2ca02c" for x in fr], label=name)
+    if "close" in m.columns:
+        ax3.plot(m["date"], m["close"].pct_change() * 100,
+                 linewidth=1.2, alpha=0.9, label=bench_name)
+    ax3.axhline(0, color="gray", linewidth=0.8)
+    ax3.legend()
+    ax3.set_title("每日涨跌幅对比（看波动，不是看方向）")
+    ax3.set_ylabel("%")
+    ax3.grid(linestyle="-.", alpha=0.5)
+    fig.savefig(out, dpi=120, bbox_inches="tight")
+    plt.close(fig)
+    print(f"\n图已保存：{out}")
+    if open_img:
+        _open_image(out)
+
+
+def show_stock(kind, code, name, refresh=False, days=None, bench_code=None, open_img=True):
     df = fetch_daily(kind, code, force_refresh=refresh)
     note = ""
     if kind == "hk":  # 港股日K线更新慢，收盘后可用实时快照补当日
@@ -282,22 +399,30 @@ def show_stock(kind, code, name, refresh=False, days=None, bench_code=None):
                  title=f"{name} {code}", mav=(5, 10, 20),
                  savefig=dict(fname=out, dpi=120, bbox_inches="tight"))
     print(f"图已保存：{out}")
+    if open_img:
+        _open_image(out)
 
 
 def main():
-    args, days, bench_code, refresh, force_kind = [], None, None, False, None
+    args, days, bench_code, refresh, force_kind, open_img = [], None, None, False, None, True
     i = 1
     while i < len(sys.argv):
         t = sys.argv[i]
         if t == "--days":                       # 近 N 个自然日
             days = int(sys.argv[i + 1]); i += 2
-        elif t == "--bench":                    # 叠加基准对比，可跟指数别名（默认沪深300）
+        elif t == "--bench":                    # 换对比基准：指数别名或 6 位指数代码（默认沪深300）
             bench_code = "000300"
-            if i + 1 < len(sys.argv) and sys.argv[i + 1] in INDEX_ALIAS:
-                bench_code = INDEX_ALIAS[sys.argv[i + 1]][1]; i += 1
+            if i + 1 < len(sys.argv):
+                nxt = sys.argv[i + 1]
+                if nxt in INDEX_ALIAS:
+                    bench_code = INDEX_ALIAS[nxt][1]; i += 1
+                elif nxt.isdigit() and len(nxt) == 6:
+                    bench_code = nxt; i += 1
             i += 1
         elif t == "--refresh":
             refresh = True; i += 1
+        elif t == "--no-open":
+            open_img = False; i += 1
         elif t == "--stock":
             force_kind = "stock"; i += 1
         elif t == "--fund":
@@ -309,9 +434,12 @@ def main():
         query = args[0]
     else:
         print(__doc__)
-        query = input("请输入股票/指数/基金的名称或代码：").strip()
+        query = input("请输入股票/指数/基金的名称或代码：").strip().lstrip("﻿")
         if not query:
             return
+        d = input("图表区间（天数，直接回车=全部历史，常用 30 / 90 / 365）：").strip().lstrip("﻿")
+        if d.isdigit():
+            days = int(d)
 
     result = resolve(query, force_kind)
     if not result:
@@ -320,9 +448,9 @@ def main():
     if name == code:  # 数字代码输入时，反查一个好看的名称用于展示
         name = _display_name(kind, code)
     if kind == "fund":
-        show_fund(code, name, days, bench_code)
+        show_fund(code, name, days, bench_code, open_img)
     else:
-        show_stock(kind, code, name, refresh, days, bench_code)
+        show_stock(kind, code, name, refresh, days, bench_code, open_img)
 
 
 if __name__ == "__main__":

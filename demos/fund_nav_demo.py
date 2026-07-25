@@ -8,6 +8,11 @@ fund_nav_demo.py — 场外基金净值拉取与基准对比演示（计划 04 �
        但行业主题基金波动巨大，先看懂风险再谈策略。
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让根目录的轮子可 import
+sys.stdout.reconfigure(encoding="utf-8")  # Windows 中文控制台默认 GBK，✓ 等字符会报编码错
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt

@@ -47,6 +47,7 @@
 ## 技术栈与约定
 - Python 3 + pandas / numpy / matplotlib / mplfinance；akshare 1.18（已安装）
 - `lianghuaLearn.py` 是课程练习文件，**保持原样不要重构**；新功能开新文件
+  （唯一例外：2026-07-25 demo.csv 移入 data/，只同步了 6 处路径字符串，逻辑一行未动）
 - 数据统一存 `data/` 目录（CSV 缓存），列名统一：`date, open, high, low, close, volume`
 - 快速查行情（含"现在腾讯多少钱"这类问题）：**先跑 `python quote.py <名称或代码>`**，别手写临时查询代码
 - 写代码取数一律走 [fetch_data.py](fetch_data.py) 的轮子（`fetch_daily` / `fetch_fund_nav` / `fetch_spot_bar`），不要散落地直接调 akshare/requests
@@ -64,14 +65,24 @@ lianghuaLearn/
 │   ├── data_sources.md           ← 数据源与交易规则（含双源容灾约定）
 │   ├── funds.md                  ← 场外基金规则（支付宝渠道必读）
 │   ├── exit_rules.md             ← 离场规则（止盈/移动止盈，含真实模拟结论）
-│   └── metrics.md                ← 绩效指标标准算法
+│   ├── metrics.md                ← 绩效指标标准算法
+│   └── zhihu/                    ← 网文策略验证案例（吃超跌恐慌修复策略.md）
+├── run.py                        ← ⭐ 回测实验台：日常唯一要改的文件（改标的+策略名两行）
+├── quant/                        ← 回测框架包（plans/07，分层：数据→指标→策略→引擎→评估）
+│   ├── data.py                   ← ① 取数契约（缓存→自动下载+体检；基金净值模式）
+│   ├── indicators.py             ← ② 指标纯函数（MA/RSI/BIAS/MACD/KDJ/BOLL）
+│   ├── signals.py                ← ③ 入场信号库（6 个超跌信号 + cross_down）
+│   ├── exits.py                  ← ③ 离场：ExitSpec 参数工厂 + exit_below_ma/exit_trailing
+│   ├── engine.py                 ← ④ 事件循环（T+1 次日成交）+ assert_no_lookahead 门禁
+│   ├── metrics.py / report.py    ← ⑤ 绩效计算 / 报告（对比表/参数扰动/样本量警报）
+│   └── strategies/               ← ③ 策略库：一套打法一个文件 + __init__.py 注册表
+├── test_framework.py             ← 框架主测试：v3 逐笔回归 + 因果门禁 + 数据契约（全绿才算可信）
+├── archive/                      ← 冻结的历史实验脚本（知乎 v1~v4，一行不改，见 archive/README.md）
 ├── fetch_data.py                 ← 数据获取轮子（股票双源容灾 + 基金净值 + 港股当日快照）
 ├── quote.py                      ← 自助查询工具：名称/代码 → 最近数据 + 图（用户随手用）
+├── git_gui_tool.py               ← Git 弹窗小工具（tkinter，免记 git 命令）
 ├── plot_kline.py                 ← 读缓存 CSV 画 K 线/收盘曲线 PNG
-├── tencent_week_kline.py         ← 示例：腾讯近一周日 K（课程画法 + 当日快照补全）
-├── fund_nav_demo.py              ← 示例：基金净值 vs 沪深300 基准对比
-├── exit_rules_demo.py            ← 示例：离场规则（移动止盈/均线）真实数据模拟
-├── data/                         ← 行情/净值缓存（腾讯/茅台/沪深300/永赢半导体C/上证综指ETF）
-├── lianghuaLearn.py              ← 课程练习（勿动）
-└── demo.csv                      ← 练习用样例数据
+├── demos/                        ← 学习示例（离场规则/基金净值/腾讯周K，见 demos/README.md）
+├── data/                         ← 行情/净值缓存 + 课程样例数据 demo.csv
+└── lianghuaLearn.py              ← 课程练习（逻辑勿动；demo.csv 已挪入 data/，6 处路径字符串已同步）
 ```

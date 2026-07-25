@@ -11,7 +11,7 @@ def greet():
 
 
 def testKdj():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     df = pd.read_csv(file_name)
     
     # 重命名列（与之前一致）
@@ -43,7 +43,7 @@ def testKdj():
 
 
 def testMacd():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     df = pd.read_csv(file_name)
     
     # 重命名列（与之前一致）
@@ -85,7 +85,7 @@ def testMacd():
 
 
 def testPandas_mplfinance():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     df = pd.read_csv(file_name)
     
     # 重命名列（与之前一致）
@@ -143,7 +143,7 @@ def testPandas_mplfinance():
     
 
 def testPandas_corrected():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     df = pd.read_csv(file_name)
     
     # 重命名列
@@ -202,7 +202,7 @@ def testPandas_corrected():
 
 
 def testReadFile():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     end_price,volumn = np.loadtxt(file_name, delimiter=",", usecols=(2,6), unpack=True)
 
 
@@ -284,7 +284,7 @@ def calKdj(df , n=9):
 
 
 def testPtp():
-    file_name = "demo.csv"
+    file_name = "data/demo.csv"
     highPrice, lowPrice = np.loadtxt(file_name, delimiter=",",  usecols=(4,5), unpack=True)
     print(f"max price: {max(highPrice)}, min price: {min(lowPrice)}")
     #print("max price:{}".format(max(highPrice)))

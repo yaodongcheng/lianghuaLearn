@@ -11,9 +11,11 @@
 - [技术指标](#技术指标)
   - [cal_macd — MACD 指标](#cal_macd--macd-指标)
   - [cal_kdj — KDJ 指标](#cal_kdj--kdj-指标)
+- [回测](#回测)
+  - [quant/ — 回测框架（plans/07）⭐ 新策略默认入口](#quant--回测框架plans07-交付物--新策略默认入口)
+  - [cross_down — 信号首日触发](#cross_down--信号首日触发)
 - [画图](#画图)
   - [A股配色 K 线样式](#a股配色-k-线样式)
-- 待补充：回测引擎、绩效指标
 
 ---
 
@@ -167,6 +169,67 @@ def cal_kdj(df, n=9):
 
 ---
 
+## 回测
+
+### quant/ — 回测框架（plans/07 交付物）⭐ 新策略默认入口
+
+**功能**：单标的、全仓进出、T+1 低频策略的完整回测框架。六层分层：
+`data.py`（取数）→ `indicators.py`（指标）→ `signals.py`/`exits.py`（策略插槽）
+→ `engine.py`（事件循环）→ `metrics.py`/`report.py`（评估）。
+**下层不 import 上层；策略契约是函数签名，不是基类。**
+
+**日常用法（run.py 实验台，只改两行）**：
+```python
+# run.py
+TARGET   = "上证指数"       # 标的：指数名/股票名/基金名/代码
+STRATEGY = "bias_oversold"  # 策略：quant/strategies/ 里登记的名字
+# 然后 python run.py；或 CLI 覆盖：python run.py 贵州茅台 --strategy crash_10d
+```
+
+**代码内用法**：
+```python
+from quant import ExitSpec, run_backtest, assert_no_lookahead
+from quant.data import load_data
+from quant import signals
+
+df, info = load_data("上证指数")                    # ① 取数（缓存→自动下载+体检）
+assert_no_lookahead(signals.sig_crash, df)          # 因果性门禁（新信号必过）
+trades, eq = run_backtest(df, signals.sig_crash,    # ④ 引擎（T+1、成本、记账）
+                          ExitSpec(take_profit=0.05, max_hold=20).to_fn(),
+                          start="2018-07-01")
+```
+
+**离场三种给法**（细节见 quant/exits.py 文档串）：
+- `ExitSpec(take_profit=0.05, stop_loss=None, max_hold=20, trail_activate=None, trail_pct=None, min_hold=0)` 参数工厂（覆盖 90% 场景；基金记得 min_hold≥5）
+- 现成函数：`exit_below_ma(20)` / `exit_trailing(0.10)`
+- 自定义：`def fn(position, row, hist) -> str | None`（hist 只含截至当日数据，物理防未来函数）
+
+**校验状态**：✅ 已验证（2026-07-25，`python test_framework.py` 全绿）：
+与归档 v3 引擎逐笔回归 28 组（6 信号 × 2 指数 × 4 离场）完全一致；文档 v3 数字
+原样复现；6 信号全过因果门禁 + `shift(-1)` 负例被抓；无缓存自动下载/报错契约通过；
+茅台 qfq / 基金净值模式（min_hold≥5）跑通；每模块 <150 行。
+**注意事项**：
+- 未处理涨跌停无法成交（指数/ETF 策略影响小；个股策略报告需自行注明）
+- 回测区间之外的预热段必须保留在 df 里（指标要"暖机"），用 `start=` 切回测起点
+- 结果样本小（信号稀疏策略 8 年仅 10-30 笔），年化差异 <2% 视为噪声
+
+### cross_down — 信号首日触发
+
+**功能**：条件连续多日满足时只在**首日**发信号（防"天天触发"）。
+已收编进框架：`from quant.signals import cross_down`。
+
+```python
+def cross_down(cond):
+    return cond & ~cond.shift(1, fill_value=False)   # 今天满足 且 昨天不满足
+```
+
+**校验状态**：✅ 已验证（2026-07-25，v2/v3 回测全量使用；框架因果门禁通过）。
+**注意事项**：`cond.shift(1, fill_value=False)` 的写法可避免 pandas 新版
+`fillna` 降类型的 FutureWarning（旧写法 `cond.shift(1).fillna(False)` 会报警告）。
+名字叫 cross_down 但通用：金叉首日 = `cross_down(短均线 > 长均线)`。
+
+---
+
 ## 画图
 
 ### A股配色 K 线样式
@@ -200,5 +263,5 @@ mpf.plot(df, type='candle', style=my_style, volume=True,
 ## 待补充（规划中）
 | 轮子 | 说明 |
 |---|---|
-| run_backtest | 简单事件循环回测：信号→次日成交→记现金/持仓→净值曲线 |
-| calc_metrics | 年化收益、最大回撤、夏普、卡玛、胜率，对标基准 |
+| ~~calc_metrics~~ | ✅ 已由 quant/metrics.py 补上（2026-07-25，plans/07）：年化/回撤/夏普/卡玛/胜率/盈亏比 |
+| 基准对比画图 | 策略净值 vs 基准净值归一化对比图（目前散落在 quote.py 的 _plot_return_compare） |

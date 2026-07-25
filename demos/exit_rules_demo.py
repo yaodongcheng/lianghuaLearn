@@ -8,6 +8,11 @@ exit_rules_demo.py — 用真实数据演示几种"离场规则"在两个真实�
 不许用"当天盘中看到跌了当天收盘价跑掉"这种未来函数。
 """
 
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))  # 让根目录的轮子可 import
+sys.stdout.reconfigure(encoding="utf-8")  # Windows 中文控制台默认 GBK，✓ 等字符会报编码错
+
 import pandas as pd
 from fetch_data import fetch_daily, fetch_fund_nav
 
