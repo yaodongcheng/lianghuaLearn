@@ -16,6 +16,7 @@
   - [cross_down — 信号首日触发](#cross_down--信号首日触发)
 - [画图](#画图)
   - [A股配色 K 线样式](#a股配色-k-线样式)
+  - [plot_experiment — 回测买卖点标注图](#plot_experiment--回测买卖点标注图)
 
 ---
 
@@ -197,6 +198,7 @@ assert_no_lookahead(signals.sig_crash, df)          # 因果性门禁（新信�
 trades, eq = run_backtest(df, signals.sig_crash,    # ④ 引擎（T+1、成本、记账）
                           ExitSpec(take_profit=0.05, max_hold=20).to_fn(),
                           start="2018-07-01")
+# 需要期末持仓状态（买入日/浮盈/是否待成交）时用 run_backtest_ex，多返回一个 tail dict
 ```
 
 **离场三种给法**（细节见 quant/exits.py 文档串）：
@@ -257,6 +259,38 @@ mpf.plot(df, type='candle', style=my_style, volume=True,
 **注意事项**：
 - mplfinance 要求列名严格为 `Open, High, Low, Close, Volume`，日期设为索引
 - A 股习惯红涨绿跌，与欧美软件相反，别搞混
+
+---
+
+### plot_experiment — 回测买卖点标注图
+
+**功能**：一次回测 → 一张标注图 PNG：收盘曲线 + 买▲/卖▼（**红/绿=盈/亏**，A股配色；
+旁注卖出原因+收益率）+ 持仓段底色同胜负 + 未成交信号灰点 + 净值 vs 买入持有副图
+（虚线标最大回撤峰→谷）。run.py 每次回测自动产出，文件名固定（图片查看器里刷新即可）。
+
+**签名**：
+- `plot_experiment(target, strategy_name, start, exit_override=None, data_start="20180101", cost=0.001) -> Path`
+  （run.py 单策略出图入口，与 run_experiment 同参数口径）
+- `plot_compare_experiment(target, strategy_names, start, exit_override=None, ...) -> Path`
+  （run.py 比选入口：文字对比表 + n 个策略价格子图 + 共享净值图 + **超额收益子图**
+  （策略净值÷大盘净值−1，图例带期末超额和"跑赢时间占比"））
+- `plot_trades(bt, trades, eq, tail, sig, title, out_png)`（低层：拿引擎产物直接画）
+
+**代码**：[quant/plot.py](quant/plot.py)（125 行，单策略）+ [quant/plot_compare.py](quant/plot_compare.py)（71 行，比选）。
+输出 `data/trades_{代码}_{策略}.png` / `data/compare_{代码}_{策略名单}.png`。
+
+**校验状态**：✅ 2026-07-26 上证 bottom_reversal 全区间出图，中文/标注/边界对齐目检通过；
+`python test_framework.py` 全绿（模块行数 112<150）。
+2026-07-26 增比选模式（plans/11）：两策略比选图目检通过，基金 min_hold 口径三入口统一
+收口到 exits.adjust_for_fund。
+
+**注意事项**：
+- matplotlib Agg 后端只存图不弹窗；中文字体 SimHei/微软雅黑双保险 + `axes.unicode_minus=False`
+- 卖出标注贴边自动换对齐方向（左/右）防裁剪；文字 offset points 抬高防与▼标记重叠
+- 颜色语义（2026-07-26 用户反馈后定稿）：**颜色通道给胜负（红盈绿亏），卖出原因放标注
+  文字**——初版用颜色编码原因（橙止盈/蓝超期），但原因文字里本来就有，颜色给胜负更直观
+- 图例固定左上空白区（`bbox_to_anchor=(0, 0.87)`），别放右上（会压住右侧贴边标注）
+- "信号未成交"灰点是**展示层近似**（信号次日不在成交买入日集合里即算被挡），不是引擎记账
 
 ---
 

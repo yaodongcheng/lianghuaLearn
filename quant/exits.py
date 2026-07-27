@@ -18,7 +18,7 @@ quant/exits.py — ③ 离场层：三档用法，由易到难
 - hist 是引擎给的"截至当日"切片：想拿未来数据？物理上没有。这就是契约级防未来函数。
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 @dataclass(frozen=True)  # frozen：参数定稿后不可改，防止实验中途改参数口径混乱
@@ -67,6 +67,16 @@ class ExitSpec:
         if self.min_hold:
             parts.append(f"最少持有{self.min_hold}日")
         return " / ".join(parts) if parts else "永不主动离场（买入持有）"
+
+
+def adjust_for_fund(rule, kind):
+    """基金模式口径调整（三个入口共用：report.run_experiment / plot / plot_compare）：
+    ExitSpec 的 min_hold 提到 5 个交易日（覆盖 7 个自然日 1.5% 惩罚性赎回费，
+    见 Knowledge/funds.md）；非基金标的或非 ExitSpec 原样返回。"""
+    if kind == "fund" and isinstance(rule, ExitSpec) and rule.min_hold < 5:
+        print("※ 基金模式：min_hold 自动提到 5 个交易日（覆盖 7 个自然日 1.5% 惩罚性赎回费）")
+        return replace(rule, min_hold=5)
+    return rule
 
 
 def exit_below_ma(n=20):

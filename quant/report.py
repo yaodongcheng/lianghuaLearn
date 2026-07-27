@@ -16,8 +16,8 @@ import pandas as pd
 
 from quant import metrics
 from quant.data import load_data
-from quant.engine import run_backtest
-from quant.exits import ExitSpec
+from quant.engine import run_backtest, run_backtest_ex
+from quant.exits import ExitSpec, adjust_for_fund
 
 
 def sample_warnings(n_trades, n_params):
@@ -30,8 +30,10 @@ def sample_warnings(n_trades, n_params):
               f"先做 param_sweep 扰动测试再下结论")
 
 
-def print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, bt):
-    """单策略完整报告：三要素回显 → 汇总指标 → 逐笔明细。"""
+def print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, bt, tail=None):
+    """单策略完整报告：三要素回显 → 汇总指标 → 逐笔明细。
+    tail 是 run_backtest_ex 给的期末状态：用于把"期末仍持仓/信号待成交"如实写出，
+    不传则按老行为只区分有无闭环交易。"""
     print(f"\n{'=' * 74}\n回测报告：{info['name']}（{info['kind']}:{info['code']}） × 策略「{strategy.name}」\n{'=' * 74}")
     print(f"区间：{bt.index[0]:%Y-%m-%d} ~ {bt.index[-1]:%Y-%m-%d}    "
           f"离场：{exit_desc}    成本：双边 {cost:.1%}（T 日信号 → T+1 开盘成交）")
@@ -39,8 +41,14 @@ def print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, 
         print(f"策略备注：{strategy.note}")
 
     s = metrics.summarize(trades, eq)
-    print(f"\n信号 {n_signals} 次 → 成交 {s['交易数']} 笔   胜率 {s['胜率']:.0%}   "
-          f"平均每笔 {s['平均每笔']:+.1%}（盈亏比 {s['盈亏比']:.1f}）")
+    holding = tail is not None and tail.get("position") is not None
+    n_closed = s["交易数"]
+    closed_txt = f"闭环 {n_closed} 笔" + ("＋期末持仓中 1 笔" if holding else "")
+    # 0 笔闭环时胜率/平均每笔是 0÷0=nan，显示 "—" 而不是 "nan%"（口径与 compare_table 一致）
+    win = f"{s['胜率']:.0%}" if n_closed else "—"
+    avg = f"{s['平均每笔']:+.1%}" if n_closed else "—"
+    pfr = f"{s['盈亏比']:.1f}" if n_closed else "—"
+    print(f"\n信号 {n_signals} 次 → {closed_txt}   胜率 {win}   平均每笔 {avg}（盈亏比 {pfr}）")
     print(f"总收益 {s['总收益']:+.1%}   年化 {s['年化']:+.1%}   最大回撤 {s['最大回撤']:+.1%}   "
           f"夏普 {s['夏普']:.2f}   卡玛 {s['卡玛']:.2f}")
     bh = bt["close"].iloc[-1] / bt["close"].iloc[0] - 1
@@ -48,14 +56,25 @@ def print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, 
     if info["kind"] in ("a", "hk"):
         print("※ 个股回测未处理涨跌停无法成交（主板 ±10%/创业科创 ±20%），"
               "涉及追涨停/抄底跌停的信号结论需手工复核")
-    sample_warnings(s["交易数"], _count_params(strategy))
+    sample_warnings(n_closed, _count_params(strategy))
 
     if len(trades):
         t = trades.copy()
         t["收益率"] = (t["收益率"] * 100).round(1).astype(str) + "%"
         print(f"\n逐笔明细：\n{t.to_string(index=False)}")
-    else:
-        print("\n无交易（信号从未触发或被冷却期挡住）")
+
+    if holding:
+        p = tail["position"]
+        print(f"\n※ 期末仍持仓（未计入上方统计）：{p.entry_date:%Y-%m-%d} 买入 "
+              f"@ {p.entry_price:,.2f}，持有 {p.hold_days} 个交易日，"
+              f"浮盈 {tail['unrealized']:+.1%}（按 {bt.index[-1]:%Y-%m-%d} 收盘估值，离场条件均未触发）")
+    elif tail is not None and tail.get("pending_buy"):
+        print("\n※ 最后交易日收盘刚触发信号，T+1 行情尚未发生，等待成交")
+    elif not len(trades):
+        if n_signals == 0:
+            print("\n无交易：区间内信号从未触发（策略全程空仓观望）")
+        else:
+            print(f"\n无交易：{n_signals} 次信号均落在持仓期/冷却期内，未形成新买入")
     return s
 
 
@@ -80,8 +99,8 @@ def param_sweep(df, make_signal, grid, exit_fn, start, cost=0.001):
     用法：param_sweep(df, signals.sig_crash, [{"n": 5}, {"n": 10}, {"n": 20}], ...)"""
     print(f"\n参数扰动（年化收益，同一离场）：")
     for params in grid:
-        sig = make_signal(df, **params)
-        trades, eq = run_backtest(df, make_signal, exit_fn, start=start, cost=cost)
+        fn = lambda df, _p=params: make_signal(df, **_p)   # 参数绑进入场函数（防闭包晚绑定）
+        trades, eq = run_backtest(df, fn, exit_fn, start=start, cost=cost)
         label = " ".join(f"{k}={v}" for k, v in params.items())
         print(f"  {label:<28} {len(trades):>3} 笔   年化 {metrics.annual_return(eq):+.1%}   "
               f"回撤 {metrics.max_drawdown(eq):+.1%}")
@@ -113,17 +132,14 @@ def run_experiment(target, strategy_name, start, exit_override=None,
     exit_rule = exit_override if exit_override is not None else strategy.exit
 
     df, info = load_data(target, start=data_start)
-    if info["kind"] == "fund" and isinstance(exit_rule, ExitSpec) and exit_rule.min_hold < 5:
-        import dataclasses
-        exit_rule = dataclasses.replace(exit_rule, min_hold=5)
-        print("※ 基金模式：min_hold 自动提到 5 个交易日（覆盖 7 个自然日 1.5% 惩罚性赎回费）")
+    exit_rule = adjust_for_fund(exit_rule, info["kind"])   # 基金防惩罚费（exits.py 统一收口）
     exit_fn = exit_rule.to_fn() if isinstance(exit_rule, ExitSpec) else exit_rule
     exit_desc = exit_rule.describe() if isinstance(exit_rule, ExitSpec) else \
         getattr(exit_rule, "__name__", "自定义离场函数")
     if exit_override is not None:
         exit_desc += "（EXIT_OVERRIDE 覆盖）"
 
-    trades, eq = run_backtest(df, strategy.entry_fn, exit_fn, start=start, cost=cost)
+    trades, eq, tail = run_backtest_ex(df, strategy.entry_fn, exit_fn, start=start, cost=cost)
     bt = df.loc[pd.Timestamp(start):]
     n_signals = int(strategy.entry_fn(df).loc[bt.index].sum())
-    return print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, bt)
+    return print_report(info, strategy, exit_desc, start, cost, n_signals, trades, eq, bt, tail)

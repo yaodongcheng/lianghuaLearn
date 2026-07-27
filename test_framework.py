@@ -98,6 +98,21 @@ def test_doc_numbers(df):
               f"期望 {expect}")
 
 
+def test_param_sweep(df):
+    print("\n===== 1c. param_sweep 扰动真生效（2026-07-26 假稳定 bug 回归） =====")
+    import contextlib, io
+    from quant.report import param_sweep
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):   # 扫表输出收进 buffer：断言数字部分随参数变化
+        param_sweep(df, signals.sig_crash, [{"n": 5}, {"n": 20}],
+                    ExitSpec(**PART1_EXIT).to_fn(), START)
+    # 行格式"标签 + 数字列"；旧 bug 参数没绑进入场函数 → 每行数字全同（假稳定）。
+    # 单参数标签无空格，split()[1:] 去掉标签列后剩下的就是数字部分。
+    nums = [l.split()[1:] for l in buf.getvalue().splitlines() if l.strip().startswith("n=")]
+    check("param_sweep 不同参数打出不同数字", len(nums) == 2 and nums[0] != nums[1],
+          f"两行数字：{nums}")
+
+
 def test_lookahead(df):
     print("\n===== 2. 因果性门禁（无未来函数） =====")
     for label, fn in SIGNALS:
@@ -154,6 +169,7 @@ def test_module_size():
 if __name__ == "__main__":
     df_sh = test_regression()
     test_doc_numbers(df_sh)
+    test_param_sweep(df_sh)
     test_lookahead(df_sh)
     test_data_contract()
     test_stock_and_new_strategy()

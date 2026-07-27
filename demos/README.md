@@ -10,3 +10,4 @@
 | `exit_rules_demo.py` | 移动止盈/跌破均线/一直持有，在半导体基金 2026 行情和腾讯 2021 大顶两个真实片段中的表现 | [Knowledge/exit_rules.md](../Knowledge/exit_rules.md) |
 | `fund_nav_demo.py` | 场外基金净值拉取 + 与沪深300 归一化对比 + 风险指标速览 | [Knowledge/funds.md](../Knowledge/funds.md)、计划 04 |
 | `tencent_week_kline.py` | 课程 K 线画法复刻：腾讯近一周日 K（含当日实时快照补一根） | 计划 01 数据轮子验收 |
+| `oversold_vs_bear_year.py` | 熊市压力测试：超跌策略在 2018 股灾（上证 -25.5%）里的逐笔表现与按年汇总 | [Knowledge/zhihu/吃超跌恐慌修复策略.md](../Knowledge/zhihu/吃超跌恐慌修复策略.md) |

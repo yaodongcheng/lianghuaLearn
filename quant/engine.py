@@ -43,19 +43,25 @@ def _as_bool_series(sig, df):
 
 
 def run_backtest(df, entry_fn, exit_fn, start=None, cost=0.001, cooldown_days=10):
-    """单标的、全仓进出、T+1 低频回测。
+    """单标的、全仓进出、T+1 低频回测，返回 (trades, equity)。
+    需要期末持仓明细（报告层"持仓中"提示）时用 run_backtest_ex。"""
+    trades, eq, _tail = run_backtest_ex(df, entry_fn, exit_fn, start=start,
+                                        cost=cost, cooldown_days=cooldown_days)
+    return trades, eq
 
-    参数：
-        df:        date 索引 + open/high/low/close/volume（含 start 之前的预热段，
-                   指标需要预热段"暖机"，信号在完整 df 上算完再切片，与 v3 口径一致）
-        entry_fn:  入场函数，df -> 与 df 等长的布尔 Series（True = 当天收盘出信号）
-        exit_fn:   离场函数，(position, row, hist) -> 离场原因字符串 或 None
-        start:     回测起点（如 "2018-07-01"）；None = 从 df 第一行开始
-        cost:      单边成本（买卖各扣一次；双边 0.1% 就传 0.001）
-        cooldown_days: 卖出后冷却天数，防止同一波下跌反复触发买入
 
-    返回：(trades DataFrame, equity 净值 Series)
-        单笔收益率 = 卖出后现金 / 买入前现金 − 1（别从持仓反推，会重复扣成本）
+def run_backtest_ex(df, entry_fn, exit_fn, start=None, cost=0.001, cooldown_days=10):
+    """单标的、全仓进出、T+1 低频回测（扩展版，多返回期末状态 tail）。
+
+    df 含 start 之前的预热段（指标要"暖机"，信号在完整 df 上算完再切片）；
+    entry_fn: df -> 等长布尔 Series（True=当天收盘出信号）；
+    exit_fn: (position, row, hist) -> 离场原因|None；cost 为单边成本；
+    cooldown_days 为卖出后冷却天数（防同一波下跌反复触发买入）。
+
+    返回 (trades, equity, tail)：单笔收益率 = 卖出后现金/买入前现金 − 1；
+    tail = {position: 期末持仓 Position|None, pending_buy: 末日信号待成交,
+            unrealized: 持仓浮动收益率(含买入成本)}——报告层据此区分
+    "无信号 / 持仓中 / 信号待成交"，不靠猜。
     """
     if start is not None:
         sig_full = _as_bool_series(entry_fn(df), df)
@@ -108,9 +114,15 @@ def run_backtest(df, entry_fn, exit_fn, start=None, cost=0.001, cooldown_days=10
 
         equity.append(cash + shares * row["close"])
 
-    # 期末仍持仓：按最后收盘估值，不强制平仓（trades 里也不会有这笔）
+    # 期末仍持仓：按最后收盘估值，不强制平仓（trades 里也不会有这笔；
+    # 持仓明细放进 tail 交给报告层如实展示）
     cols = ["买入日", "卖出日", "持有交易日", "收益率", "卖出原因"]
-    return pd.DataFrame(trades, columns=cols), pd.Series(equity, index=bt.index)
+    tail = {
+        "position": pos if shares > 0 else None,
+        "pending_buy": bool(pending_buy and shares == 0),
+        "unrealized": (equity[-1] / entry_cash - 1) if shares > 0 else None,
+    }
+    return pd.DataFrame(trades, columns=cols), pd.Series(equity, index=bt.index), tail
 
 
 def assert_no_lookahead(entry_fn, df):
