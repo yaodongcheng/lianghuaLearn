@@ -17,7 +17,7 @@ import sys
 
 # ================= 只改这里 =================
 TARGET   = "上证指数"          # ① 标的：指数名/股票名/基金名/代码
-STRATEGY = ["bottom_reversal", "bias_oversold"]
+STRATEGY = ["bottom_reversal", "bias_oversold","bull_bear_hybrid"]
 # ② 策略：写字符串 = 单策略模式（文字报告+买卖点图）；
 #         写名单    = 比选模式（对比表 + 每策略一个买卖点子图 + 共享净值图）
 # （可选）EXIT_OVERRIDE：临时换离场做对比实验
