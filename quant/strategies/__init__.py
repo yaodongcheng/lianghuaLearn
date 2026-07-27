@@ -11,6 +11,7 @@ from quant.strategies.kdj_d_oversold import STRATEGY as _kdj
 from quant.strategies.ma_cross import STRATEGY as _ma
 from quant.strategies.macd_cross import STRATEGY as _macd
 from quant.strategies.rsi6_oversold import STRATEGY as _rsi
+from quant.strategies.trend_ma250 import STRATEGY as _trend
 
-_ALL = [_bias, _boll, _rev, _hybrid, _crash, _dd, _kdj, _ma, _macd, _rsi]
+_ALL = [_bias, _boll, _rev, _hybrid, _crash, _dd, _kdj, _ma, _macd, _rsi, _trend]
 REGISTRY = {s.name: s for s in _ALL}

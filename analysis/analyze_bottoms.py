@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-analyze_bottoms.py — plans/09：8 个"局部底部"的 K 线组合 + 量价特征事后分析
+analysis/analyze_bottoms.py — plans/09：8 个"局部底部"的 K 线组合 + 量价特征事后分析
 
 在用户指定的 8 个窗口内找【最低收盘价】= 底部 T 日，输出四张表：
     A 底部定位（窗口 → 实际底部日期，检验用户给的月份准不准）
@@ -12,6 +12,11 @@ analyze_bottoms.py — plans/09：8 个"局部底部"的 K 线组合 + 量价特
    1. 规则化（无未来函数）2. 全样本回测（看误报率，不是只看这 8 次）
 """
 import sys
+from pathlib import Path
+
+# 脚本位于 analysis/ 子目录：Python 只把【脚本所在目录】加进 import 路径，
+# 不会加项目根目录——手动补上，否则 from quant... / fetch_data 全部找不到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 sys.stdout.reconfigure(encoding="utf-8")
 

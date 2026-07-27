@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""analyze_core_satellite.py — 计划13：核心-卫星组合回测（可重跑）
+"""analysis/analyze_core_satellite.py — 计划13：核心-卫星组合回测（可重跑）
 
 验证 Knowledge/hybrid_vs_core_satellite.md 的终极结论：
 "一直在场 + 恐慌增强"是唯一没被数据否决的结构。
@@ -12,6 +12,11 @@
 产出：终端对比表 + data/core_satellite_000001.png（净值图，标三次牛市色带）
 """
 import sys
+from pathlib import Path
+
+# 脚本位于 analysis/ 子目录：Python 只把【脚本所在目录】加进 import 路径，
+# 不会加项目根目录——手动补上，否则 from quant... / fetch_data 全部找不到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import matplotlib
 

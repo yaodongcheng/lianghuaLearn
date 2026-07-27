@@ -19,7 +19,7 @@
 - [x] 输出策略 vs 基准的净值曲线 + 绩效指标（年化/回撤/夏普）→ [data/fund_rotation.png](../data/fund_rotation.png)
 - [x] 调仓次数统计：验证年均调仓次数在费用可承受范围
 
-## 结果（2026-07-27，[analyze_fund_rotation.py](../analyze_fund_rotation.py) 可重跑）
+## 结果（2026-07-27，[analysis/analyze_fund_rotation.py](../analysis/analyze_fund_rotation.py) 可重跑）
 
 标的：易方达沪深300ETF联接A(110020) / 南方中证500ETF联接(LOF)A(160119)，
 2009-11 ~ 2026-07（16.7 年，4079 个交易日，累计净值口径）。

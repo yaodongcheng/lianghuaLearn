@@ -27,13 +27,18 @@
 **功能**：拉取 A股个股 / A股指数 / 港股个股的日线行情，统一列名后存 `data/` 缓存。
 东财接口优先、新浪接口兜底（实测东财在部分企业网络被防火墙拦截，见注意事项）。
 
-**签名**：`fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False) -> DataFrame`
+**签名**：`fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False, adjust=None) -> DataFrame`
 
 - `market`：`"a"`=A股个股 / `"idx"`=A股指数 / `"hk"`=港股个股 / `"etf"`=场内ETF
 - `symbol`：`"600519"` / `"000300"` / `"00700"` / `"510210"`
 - 返回列：`date, open, high, low, close, volume`，日期升序
-- 复权自动约定：个股 `qfq`，指数不复权；缓存文件名如 `hk_00700_qfq.csv`
+- 复权自动约定：个股 `qfq`，指数/ETF 默认不复权；缓存文件名如 `hk_00700_qfq.csv`
+- `adjust`：复权方式覆盖（2026-07-27 新增）。**ETF 回测务必 `adjust="qfq"`**——
+  raw 价遇份额拆分出现假暴跌（512480 两次 1拆2，单日假跌 -48.9%/-50.7%，
+  见 Knowledge/data_sources.md）。显式复权只走东财（新浪 ETF 接口无复权参数）
 - 缓存最后日期距今 ≤7 天直接读缓存；`force_refresh=True` 强制重下
+- 缓存尾部新鲜但起点不覆盖时（标的上市晚于请求起点），下载失败会退回用缓存
+  并明确警告，不再硬报错（2026-07-27 新增 rescue 机制）
 
 **代码**：完整实现见 [fetch_data.py](fetch_data.py)（约 180 行，含注释）。核心结构：
 

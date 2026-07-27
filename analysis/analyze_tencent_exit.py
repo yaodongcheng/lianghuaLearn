@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""analyze_tencent_exit.py — 计划05：腾讯（00700.HK）卖出时机分析（可重跑）
+"""analysis/analyze_tencent_exit.py — 计划05：腾讯（00700.HK）卖出时机分析（可重跑）
 
 背景：用户持有腾讯股权激励 233 股，只能卖不能买。本脚本把模糊的"什么时候卖"
 变成可执行的规则对比，回答三个问题：
@@ -19,6 +19,11 @@
 产出：终端一页纸结论 + data/tencent_exit_00700.png（近一年 K 线+均线+关键位）
 """
 import sys
+from pathlib import Path
+
+# 脚本位于 analysis/ 子目录：Python 只把【脚本所在目录】加进 import 路径，
+# 不会加项目根目录——手动补上，否则 from quant... / fetch_data 全部找不到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import matplotlib
 matplotlib.use("Agg")                      # 只存 PNG 不弹窗（项目统一约定）

@@ -30,7 +30,7 @@
 
 ## 结果（2026-07-27 完成）
 
-见 analyze_core_satellite.py 输出与 data/core_satellite_000001.png。
+见 analysis/analyze_core_satellite.py 输出与 data/core_satellite_000001.png。
 
 | 组合 | 总收益 | 年化 | 最大回撤 | 夏普 |
 |---|---|---|---|---|

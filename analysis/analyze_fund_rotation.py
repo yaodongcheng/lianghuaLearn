@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""analyze_fund_rotation.py — 计划04：场外基金动量轮动回测（可重跑）
+"""analysis/analyze_fund_rotation.py — 计划04：场外基金动量轮动回测（可重跑）
 
 主战场的第一仗：沪深300联接A(110020) / 中证500联接A(160119) 动量轮动，
 对比"一直持有沪深300联接"。策略依据见 Knowledge/funds.md §五.2。
@@ -28,6 +28,11 @@
 产出：终端报告 + data/fund_rotation.png（净值曲线 + 回撤 + 现金期灰底）
 """
 import sys
+from pathlib import Path
+
+# 脚本位于 analysis/ 子目录：Python 只把【脚本所在目录】加进 import 路径，
+# 不会加项目根目录——手动补上，否则 from quant... / fetch_data 全部找不到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import matplotlib
 matplotlib.use("Agg")                      # 只存 PNG 不弹窗（项目统一约定）

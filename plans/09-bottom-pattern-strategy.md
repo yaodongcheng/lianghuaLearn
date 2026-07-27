@@ -17,13 +17,13 @@
 
 ## 验收标准
 
-- [x] 分析脚本输出 8 个底部的统一特征表（analyze_bottoms.py，A 定位/B 特征/C 明细/D 反弹）
+- [x] 分析脚本输出 8 个底部的统一特征表（analysis/analyze_bottoms.py，A 定位/B 特征/C 明细/D 反弹）
 - [x] 入场信号全样本信号次数如实报告：36 次/8 年（年均 4.5），8 底部命中 6（全部 T+1 确认日）
 - [x] 策略文件 + __init__.py 注册，`python run.py` 能跑（bottom_reversal）
 - [x] 对照 Knowledge/backtest_checklist.md 逐项自检（见下方"自检记录"）
 - [x] 明确告知过拟合风险（8 个底部是事后挑的，信号从同批样本提炼）
 
-## 分析结论（analyze_bottoms.py 输出）
+## 分析结论（analysis/analyze_bottoms.py 输出）
 
 ### 底部定位（A 表）：用户给的月份有误差
 - 2019 实际底在 **1 月初**（01-03，2440 那波）；2021 实际在 **3 月上旬**（03-10）；

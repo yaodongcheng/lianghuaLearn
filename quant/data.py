@@ -29,8 +29,17 @@ INDEX_CODES = {"000300": "沪深300", "000905": "中证500", "000016": "上证50
 
 
 def _resolve_target(query):
-    """标的名称/代码 → (kind, code, 名称)。解析不了就明确报错。"""
+    """标的名称/代码 → (kind, code, 名称)。解析不了就明确报错。
+    撞码代码（如 007301：既是深市股票代码段又是基金代码）用前缀消歧：
+    "fund:007301" 强制按基金、"stock:007301" 强制按股票。"""
     q = str(query).strip()
+    for prefix, fk in (("fund:", "fund"), ("stock:", "stock")):
+        if q.lower().startswith(prefix):
+            code = q[len(prefix):]
+            result = resolve(code, force_kind=fk)
+            if result is None:
+                raise ValueError(f"无法解析标的 {query!r}")
+            return result
     if q in INDEX_ALIAS:
         kind, code = INDEX_ALIAS[q]
         return kind, code, q
@@ -42,25 +51,28 @@ def _resolve_target(query):
     return result
 
 
-def _cache_fresh(kind, code):
+def _cache_fresh(kind, code, adjust=None):
     """缓存最后日期距今 ≤7 天算新鲜（与 fetch_data.py 的容忍度同口径）。"""
     if kind == "fund":
         f = DATA_DIR / f"fund_{code}.csv"
     else:
-        f = DATA_DIR / f"{kind}_{code}_{DEFAULT_ADJUST.get(kind, '') or 'raw'}.csv"
+        adj = DEFAULT_ADJUST.get(kind, "") if adjust is None else adjust
+        f = DATA_DIR / f"{kind}_{code}_{adj or 'raw'}.csv"
     if not f.exists():
         return False
     last = pd.read_csv(f, parse_dates=["date"])["date"].iloc[-1]
     return last >= pd.Timestamp.today() - pd.Timedelta(days=CACHE_TOLERANCE_DAYS)
 
 
-def load_data(query, start="20180101", force_refresh=False):
+def load_data(query, start="20180101", force_refresh=False, adjust=None):
     """取数唯一入口。返回 (df, info)：
     df   = date 索引 + open/high/low/close/volume（从 start 起，含预热段）
     info = {"kind": "a"/"idx"/"hk"/"etf"/"fund", "code": ..., "name": ...}
+    adjust = 复权方式覆盖（None=默认）。ETF 回测建议 "qfq"：raw 价遇份额拆分
+             会出现假暴跌（512480 两次 1拆2，详见 Knowledge/data_sources.md）。
     """
     kind, code, name = _resolve_target(query)
-    fresh = _cache_fresh(kind, code) and not force_refresh
+    fresh = _cache_fresh(kind, code, adjust) and not force_refresh
 
     if kind == "fund":
         raw = fetch_fund_nav(code, force_refresh=force_refresh)
@@ -73,7 +85,7 @@ def load_data(query, start="20180101", force_refresh=False):
         print("※ 基金净值模式：一天一个价，T 日信号 → T+1 净值成交；"
               "记得 ExitSpec(min_hold≥5) 防 7 天惩罚性赎回费")
     else:
-        df = fetch_daily(kind, code, start=start, force_refresh=force_refresh)
+        df = fetch_daily(kind, code, start=start, force_refresh=force_refresh, adjust=adjust)
         if not fresh:
             check_daily(df, f"{name} {code}")
 

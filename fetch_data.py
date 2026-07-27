@@ -103,10 +103,12 @@ def _fetch_sina(market, symbol, start, end, adjust):
 SOURCES = [("东财", _fetch_eastmoney), ("新浪", _fetch_sina)]
 
 
-def _fetch_with_fallback(market, symbol, start, end, adjust, retries=2):
-    """依次尝试各数据源，每个源失败可重试；全部失败才报错。"""
+def _fetch_with_fallback(market, symbol, start, end, adjust, retries=2, sources=None):
+    """依次尝试各数据源，每个源失败可重试；全部失败才报错。
+    sources 默认 SOURCES（东财优先、新浪兜底）；调用方可缩小范围（见 fetch_daily
+    的 ETF 复权说明：新浪 ETF 接口没有复权参数，会静默返回 raw 冒充 qfq，必须排除）。"""
     errors = []
-    for name, fetcher in SOURCES:
+    for name, fetcher in (sources or SOURCES):
         for i in range(retries):
             try:
                 df = fetcher(market, symbol, start, end, adjust)
@@ -134,7 +136,7 @@ def _normalize(df):
     return df.sort_values("date").reset_index(drop=True)
 
 
-def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False):
+def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False, adjust=None):
     """
     拉取日线数据（优先读本地缓存，缓存过旧才重新下载）。
 
@@ -143,6 +145,11 @@ def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False)
         symbol:        代码，如 "600519" / "000300" / "00700" / "510210"
         start, end:    "yyyymmdd" 字符串；end 默认今天
         force_refresh: True 则无视缓存强制重新下载
+        adjust:        复权方式覆盖（None=用 DEFAULT_ADJUST 默认）。ETF 务必注意：
+                       raw 价遇【份额拆分】会出现假暴跌（2026-07-27 实测 512480 两次
+                       1拆2，单日假跌 -48.9%/-50.7%），回测会被污染。adjust="qfq"
+                       可修复，但显式复权请求只走东财（新浪 ETF 接口无复权参数，
+                       会静默返回 raw 冒充 qfq）——宁可报错，不要烂数据。
 
     返回：DataFrame，列 = date, open, high, low, close, volume，日期升序
     """
@@ -151,10 +158,17 @@ def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False)
     if market not in DEFAULT_ADJUST:
         raise ValueError(f"未知市场 {market!r}，可选：{list(DEFAULT_ADJUST)}")
 
-    adjust = DEFAULT_ADJUST[market]
+    if adjust is None:
+        adjust = DEFAULT_ADJUST[market]
+    # 显式请求复权价时排除无法兑现的源（见 docstring 的 ETF 说明）
+    sources = SOURCES
+    if adjust and market == "etf":
+        sources = [("东财", _fetch_eastmoney)]
     cache_file = DATA_DIR / f"{market}_{symbol}_{adjust or 'raw'}.csv"
 
     # ---- 尝试用缓存：要求 ①覆盖请求起点 ②最后日期足够新 ----
+    rescue = None   # 尾部新鲜但起点不覆盖的缓存：上市日晚于请求起点时，重新下载也
+                    # 拿不到更早的数据，它只是"看起来不合格"——下载失败时它是救命稻草
     if cache_file.exists() and not force_refresh:
         df = pd.read_csv(cache_file, parse_dates=["date"])
         # 起点判定放宽 10 天：请求的 start 可能是节假日（如 1 月 1 日），
@@ -166,11 +180,22 @@ def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False)
                   f"{df['date'].iloc[-1]:%Y-%m-%d}，共 {len(df)} 行）")
             mask = (df["date"] >= pd.Timestamp(start)) & (df["date"] <= pd.Timestamp(end))
             return df[mask].reset_index(drop=True)
-        print("缓存不满足要求（起点不覆盖或数据过旧），重新下载…")
+        print("缓存不满足要求（起点不覆盖【可能是上市日晚于请求起点】或数据过旧），重新下载…")
+        if fresh:
+            rescue = df
 
     # ---- 下载并写缓存 ----
     print(f"下载 {market}:{symbol} {start}~{end}（adjust={adjust!r}）…")
-    raw = _fetch_with_fallback(market, symbol, start, end, adjust)
+    try:
+        raw = _fetch_with_fallback(market, symbol, start, end, adjust, sources=sources)
+    except RuntimeError:
+        if rescue is not None:
+            print(f"⚠ 下载失败，退回使用缓存 {cache_file.name}（起点 "
+                  f"{rescue['date'].iloc[0]:%Y-%m-%d} 即为该标的全部可得历史，尾部新鲜）")
+            mask = ((rescue["date"] >= pd.Timestamp(start))
+                    & (rescue["date"] <= pd.Timestamp(end)))
+            return rescue[mask].reset_index(drop=True)
+        raise
     df = _normalize(raw)
 
     # 关键：缓存永远存"完整区间"。若已有旧缓存，新旧合并（同日期取新值），

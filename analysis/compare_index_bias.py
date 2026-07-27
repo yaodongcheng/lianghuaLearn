@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""compare_index_bias.py — bias_oversold 策略 × 六大宽基指数横向对比
+"""analysis/compare_index_bias.py — bias_oversold 策略 × 六大宽基指数横向对比
 
 回答的问题：同一个"超跌抄底"策略，换别的宽基指数，数据会比上证更好吗？
 
@@ -9,9 +9,14 @@
     同一成本（双边 0.1%，ETF 无印花税口径）
     只换标的——这样差异才只能来自标的本身
 
-用法：python compare_index_bias.py
+用法：python analysis/compare_index_bias.py
 """
 import sys
+from pathlib import Path
+
+# 脚本位于 analysis/ 子目录：Python 只把【脚本所在目录】加进 import 路径，
+# 不会加项目根目录——手动补上，否则 from quant... / fetch_data 全部找不到
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 sys.stdout.reconfigure(encoding="utf-8")
 
