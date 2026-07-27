@@ -85,6 +85,9 @@ lianghuaLearn/
 ├── git_gui_tool.py               ← Git 弹窗小工具（tkinter，免记 git 命令）
 ├── plot_kline.py                 ← 读缓存 CSV 画 K 线/收盘曲线 PNG
 ├── analyze_bottoms.py            ← plans/09 分析脚本：8 个底部的量价特征四表（可重跑）
+├── analyze_core_satellite.py     ← plans/13 分析脚本：核心-卫星组合回测（可重跑）
+├── analyze_tencent_exit.py       ← plans/05 分析脚本：腾讯卖出时机（趋势状态+卖出规则情景模拟，可重跑）
+├── analyze_fund_rotation.py      ← plans/04 分析脚本：场外基金动量轮动实验矩阵（费率/频率/空窗，可重跑）
 ├── demos/                        ← 学习示例（离场规则/基金净值/腾讯周K，见 demos/README.md）
 ├── data/                         ← 行情/净值缓存 + 课程样例数据 demo.csv
 └── lianghuaLearn.py              ← 课程练习（逻辑勿动；demo.csv 已挪入 data/，6 处路径字符串已同步）
