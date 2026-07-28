@@ -8,11 +8,15 @@
 - [数据获取](#数据获取)
   - [fetch_daily — 日线行情获取（双源容灾 + 本地缓存）](#fetch_daily--日线行情获取双源容灾--本地缓存)
   - [quote.py — 自助行情查询 CLI](#quotepy--自助行情查询-cli)
+  - [fund_limit.py — 自助限购查询 CLI](#fund_limitpy--自助限购查询-cli能不能买--每天最多买多少)
 - [技术指标](#技术指标)
   - [cal_macd — MACD 指标](#cal_macd--macd-指标)
   - [cal_kdj — KDJ 指标](#cal_kdj--kdj-指标)
 - [回测](#回测)
   - [quant/ — 回测框架（plans/07）⭐ 新策略默认入口](#quant--回测框架plans07-交付物--新策略默认入口)
+  - [quant/portfolio.py — 多标的组合再平衡引擎](#quantportfoliopy--多标的组合再平衡引擎plans16-交付物)
+  - [attribution — 组合收益归因（钱是哪条腿赚的）](#attribution--组合收益归因钱是哪条腿赚的plans23)
+  - [strategy_as_portfolio — 择时策略 → 组合契约适配器](#strategy_as_portfolio--择时策略--组合契约适配器plans20)
   - [cross_down — 信号首日触发](#cross_down--信号首日触发)
 - [画图](#画图)
   - [A股配色 K 线样式](#a股配色-k-线样式)
@@ -59,6 +63,10 @@ def fetch_daily(market, symbol, start="20200101", end=None, force_refresh=False)
 |---|---|---|
 | `fetch_fund_nav(code)` | 场外基金历史净值（东财F10）→ `date, nav, acc_nav, daily_ret`，缓存 `data/fund_{code}.csv` | 当日净值晚上才公布；东财基金 F10 主机在本网络可用 |
 | `fetch_spot_bar(symbol)` | 港股当日实时快照 → 1 行 6 列日 K | 日 K 线接口收盘后数小时才更新，用快照补当日；**只内存用、不写缓存**；新浪接口必须带 Referer 头 |
+| `fetch_dividend_table(period)` | 全市场某报告期分红表（2000年起年报/中报）→ `code, name, div_per_10, total_shares, ex_date`，缓存 `data/dividend_financing/`（✅ 2026-07-27） | 分红总额=div_per_10/10×总股本；预案不算数——按 ex_date ≤ 选股日过滤 |
+| `fetch_financing_tables()` | 全市场融资三表合一（IPO/增发/配股）→ `code, date, amount, kind, list_date`（✅ 2026-07-27） | **单位坑：IPO=万股、增发/配股=股**；IPO/增发只覆盖 2010 年起，老股需逐股补 IPO（茅台"融资=0"误杀坑，见 data_sources.md 第六节） |
+| `fetch_ipo_amount(codes, as_of=None)` | 逐股补全 IPO 募资额（元）→ `(ok: {code: 金额}, failed: [code])`，缓存 `data/dividend_financing/audit_ipo.csv`（✅ 2026-07-28，458+559 只全部命中缓存跑通） | **失败绝不当 0**：静默失败=篡改（建行真 IPO 571 亿，失败时只剩配股 22 亿 → 分红融资比从 14 虚高到 359，直接窜到榜首）。逐股接口单位是**万元**；重试 3 次；仍失败的进 failed 由调用方剔除（宁缺毋假） |
+| `fetch_fund_purchase(keyword)` | 全市场场外基金申购状态 + 日累计限额 → `code, name, status, min_buy, day_limit, fee`，缓存当天一份 `data/fund_purchase.csv`（✅ 2026-07-28，27060 只） | 判断"买得进去吗"用 **status**（限大额/开放申购=能买，暂停申购=买不了）；`day_limit=0` 是接口没给（多为机构份额），`day_limit ≥ 1e8` 是天文数字=不限购；额度按**基金公司**分配，同公司 A/C/D 份额共享，不能相加 |
 
 **用法**：
 ```python
@@ -109,6 +117,29 @@ python quote.py 腾讯 --refresh     # 强制重新下载（默认读缓存，�
 
 **校验状态**：✅ 已验证（2026-07-24）：腾讯/00700/600519/沪深300/025209/名称歧义/代码撞车 7 种输入全通过。
 **注意事项**：依赖 fetch_data.py 和 plot_kline.py 的轮子；基金名单缓存 `data/_fund_list.csv`（7 天自动更新）。
+
+### fund_limit.py — 自助限购查询 CLI（能不能买 / 每天最多买多少）
+
+**功能**：关键词 → 列出该类场外基金的**申购状态 + 每日限额**，可买的按额度排序，
+并给出"按基金公司去重后的可叠加上限"。**落地任何一只基金前先跑一遍**——QDII
+（纳指/标普/黄金外盘/原油）受外汇额度限制常年限购，而额度天天变，写死的数字必过期。
+
+**用法**：
+```bash
+python fund_limit.py 纳斯达克100      # → 建信 539001 最高 100 元/日；11 家公司叠加 ≈ 195 元/日
+python fund_limit.py 黄金             # → 30 只不限购（如 000216 华安黄金ETF联接A）
+python fund_limit.py 000216 --all     # 直接查代码；--all 连"暂停申购"的一起列
+```
+
+**三个读数陷阱**（都已在输出里处理）：
+1. **状态优先于额度**：暂停申购的基金那一栏还留着历史限额，看着能买其实买不了
+2. **同公司份额不能相加**：外汇额度按**基金公司**分配，A/C/D 份额共享同一份额度
+   → 脚本按公司取 max 再求和，不然会把 3 只建信份额算成 300 元/日
+3. **天文数字 = 不限购**：接口对不限购的基金返回 1000 亿这种值，`day_limit ≥ 1e8`
+   一律显示"不限"，并直接提示"有不限购的选择，不用凑额度"
+
+**校验状态**：✅ 2026-07-28 三种输入（纳斯达克100 / 黄金 / 000216）跑通，
+与东财页面口径一致；轮子是 `fetch_data.fetch_fund_purchase`。
 
 ---
 
@@ -220,8 +251,134 @@ trades, eq = run_backtest(df, signals.sig_crash,    # ④ 引擎（T+1、成本�
 - 回测区间之外的预热段必须保留在 df 里（指标要"暖机"），用 `start=` 切回测起点
 - 结果样本小（信号稀疏策略 8 年仅 10-30 笔），年化差异 <2% 视为噪声
 
-### cross_down — 信号首日触发
+### quant/portfolio.py + quant/rebalance.py — 多标的组合引擎（plans/16 建，plans/17 定契约）
 
+**功能**：单标的引擎（engine.py）回答"什么时候全仓进出"（择时）；本引擎回答
+"钱在几只标的之间怎么分、什么时候重新分"（配置）。
+**契约与单标的对齐**：单标的策略给两个布尔判断（是否买/是否卖），组合策略给
+一个**决策函数**——今天每只买多少钱、卖多少钱：
+
+```python
+decide_fn(ctx) -> {标的: 带符号金额}   # 正=买入金额，负=卖出金额，None/{}=不动
+```
+
+**签名**：
+```python
+from quant.portfolio import run_portfolio_backtest, load_portfolio_navs
+from quant.rebalance import threshold_rebalance, buy_and_hold, periodic_rebalance
+
+navs = load_portfolio_navs({"纳指": "fund:270042", "黄金": "fund:000216"})  # 取数走 data 层
+eq, weights, log = run_portfolio_backtest(
+    navs,                                        # {名称: df(date索引, close列)}
+    threshold_rebalance(weights=None, threshold=0.03, min_trade_value=0),
+    start=None,          # None=全部成分都有数据的首日
+    cost=0.001,          # 单边成本（与 engine.py 同口径）
+    initial_cash=10000.0)
+# eq: 每日总资产 Series（attrs["总成本"]/["建仓日"]）；weights: 每日权重表
+#     （attrs 附归因原料 shares/cash/prices/pnl）；
+# log: 成交日志（第一行=建仓，之后每行一次调仓：日期/成交总额/成本/各标的带符号金额
+#      「调仓-X」/上一段各腿持有损益「贡献-X」）
+```
+
+**三个现成决策函数**（`quant/rebalance.py`，都带 `.desc/.factory/.params` 标签供报告
+回显和参数扫描）：`threshold_rebalance(阈值触发)` / `buy_and_hold(对照组)` /
+`periodic_rebalance(freq="Y"/"Q"/"M")`。自定义只需写一个 `decide(ctx)` 函数，
+ctx 提供 `date/prices/hist/shares/cash/values/total/weights/invested` 和
+`orders_for_weights(目标权重)`（把"我想要的权重"翻译成"该买卖多少钱"）。
+
+**纪律（策略无权改，写死在引擎里）**：T 日决策 → **T+1 成交**；先卖后买；
+双边扣费；买不超现金、卖不超持仓（自动截断，不许透支/裸卖空）；
+ffill 只用过去数据对齐日期；起点早于最晚上市成分时明确报错。
+
+**文件分工**（每模块 <150 行的硬约束下拆开的，契约没变）：
+`portfolio.py` 事件循环 / `portfolio_data.py` 取数+日期对齐+`PortfolioContext` 快照
+（`from quant.portfolio import load_portfolio_navs, align_prices` 仍可用，已转出）/
+`rebalance.py` 决策函数工厂 / `report_portfolio.py` 报告总装 +
+`report_portfolio_parts.py` 报告零件（绩效行/成交明细/权重漂移/阈值敏感性）。
+**校验状态**：✅ 2026-07-28 `python test_portfolio.py` 10 项全过（账目守恒/权重回目标/
+T+1 成交/成本生效/起点校验/权重校验/不透支不卖空/ctx 看不到未来/注册表可跑/分腿归因守恒）。
+**注意事项**：`log` 第一行是**建仓**不是调仓（统计再平衡次数要 `len(log)-1`）；
+各标的金额**带符号**（正买负卖），"成交总额"是双边合计（|买|+|卖|）不是净划转额。
+
+### attribution — 组合收益归因（钱是哪条腿赚的）（plans/23）
+
+**功能**：把组合的总盈亏拆到每条腿头上——**金额法**，
+`某腿当日损益 = 昨日收盘份数 × (今日净值 − 昨日净值)`。
+**为什么需要**：组合是动态持仓（权重漂移 + 再平衡削减），"涨得最多的"和
+"赚得最多的"经常不是同一只。longterm_balance 里纳指自己涨 +653.7%，贡献只占 40.0%。
+
+**签名**（三个返回值原样喂进去即可，原料由引擎附带；计算在 `quant/attribution.py`，
+打印在 `quant/report_attribution.py`，画图在 `quant/plot_attribution.py`）：
+```python
+from quant.attribution import daily_contrib, cum_contrib, summary_table, attribute_by_periods
+from quant.report_attribution import print_contrib, print_attribution
+from quant.plot_attribution import panel_cum_contrib
+
+contrib = daily_contrib(eq, weights, log)      # 日度损益矩阵（各腿 + "成本"列）
+cum     = cum_contrib(contrib)                 # 累计贡献（画图用，含"合计"对账线）
+tbl, _  = summary_table(eq, weights, log, initial)   # 全区间总账（报告/图共用）
+seg     = attribute_by_periods(contrib, eq, bounds)  # 按区间汇总（bounds=切点日期列表）
+print_contrib(name, eq, weights, log, initial)               # 报告默认那块总账
+print_attribution(name, eq, weights, log, initial, by="Y")   # by="rebalance" 按调仓段
+panel_cum_contrib(ax, eq, weights, log)        # 把累计贡献画到任意坐标轴上
+```
+
+**已接进标准流程**（不用手动调）：组合报告默认打印总账（`print_contrib`）、
+成交明细每行带"段内盈亏"、组合图第三联画累计贡献曲线、比选模式打印各配方贡献结构。
+手动只在看**分段明细**时用：`python analysis/analyze_portfolio_attribution.py 配方名 rebalance`。
+
+**校验状态**：✅ 逐日断言 `Σ各腿损益 − 成本 = 总资产变化`，且引擎记的 pnl 与
+"份数×净值差"反推互相印证；`test_portfolio.py` ⑩ 项覆盖（含"日志分段贡献可拼接"
+"建仓行贡献必须为 0"）。
+**注意事项**：贡献是**算术金额**——元可以相加等于总盈亏，**百分比不能相加**等于总收益率
+（分母不同），要百分比就除以本金；现金/空仓期贡献恒为 0（那是机会成本的样子，不是缺数据）；
+成本单列不摊到成分头上（摊法有主观性）。
+
+### strategy_as_portfolio — 择时策略 → 组合契约适配器（plans/20）
+
+**功能**：把 `quant/strategies/` 里任意**单标的择时策略**（输出 True/False）包成
+**组合决策函数**（输出金额），从而能和资产配置组合在 run.py 比选模式下**同图公平对比**。
+**为什么需要**：run.py 两种模式不能混搭；而"择时 vs 死拿/配置"这个问题必须让
+**同一笔钱**从头到尾交给两种打法才算比较——空仓期的现金机会成本要被算进净值里。
+
+**签名**：
+```python
+from quant.adapter import strategy_as_portfolio
+
+decide = strategy_as_portfolio(
+    strategy_name,          # 策略注册名，如 "bottom_reversal"（规则从注册表取，不复制）
+    asset=None,             # 对哪只标的择时；None = 组合里唯一那只
+    cooldown_days=10,       # 卖后冷却交易日，与 engine.run_backtest 默认一致
+    fund_mode=True)         # 基金口径：ExitSpec 的 min_hold 自动提到 5 日（惩罚性赎回费）
+```
+
+**用法示例**（配方照 `quant/portfolios/bottom_reversal_fund.py`，之后 `run.py` 填名字即跑）：
+```python
+PORTFOLIO = Portfolio(
+    name="bottom_reversal_fund",
+    holdings={"上证指数联接A": "fund:100053"},
+    decide_fn=strategy_as_portfolio("bottom_reversal", fund_mode=True),
+    data_start="20110101")
+# python run.py --strategy longterm_balance,bottom_reversal_fund   ← 起点自动对齐到最晚就绪日
+```
+
+**核心纪律：规则只有一份。** 适配器只做**形状翻译**（信号→满仓买入金额、离场原因→清仓），
+入场/离场条件仍只写在 `quant/strategies/*.py`，改一处两边同时生效。
+（反面做法是手抄一份规则进 portfolios/ → 两份实现迟早漂移，回测开始骗人。）
+
+**校验状态**：✅ 2026-07-28（plans/20）同标的同区间双引擎对照：`engine.py`（T+1 开盘）
+21 笔 / 14946 元 vs 适配器（T+1 收盘）21 笔 / 13733 元，**买入日逐一对齐**（仅首笔因预热差异）
+→ 证明只换了成交模型、没改策略。`test_portfolio.py` 9 项全绿。
+**注意事项**：
+- 与单标的引擎三处口径差异（不是 bug）：① 成交价 T+1 收盘/净值 vs T+1 开盘；
+  ② **无预热段**（`ctx.hist` 从回测起点算，开头几天指标算不出 → 信号按 False）；
+  ③ 冷却期在适配器里复刻，改这个参数两边就不可比了。
+- **清仓下单要写 `-held * 2`**：卖单 T+1 成交，按今日市值下单在上涨日会剩尾巴，
+  离场规则次日重复触发出碎单；靠引擎"卖不超过持仓"的截断兜底才干净。
+- 有 `ctx.cash > 1` 的防碎单门槛：本金极小的实验（如 1 元）会 0 笔成交。
+- 只传 `close` 一列（基金净值没有 OHLC）：依赖开高低/成交量的策略会明确报错，不会给假信号。
+
+### cross_down — 信号首日触发
 **功能**：条件连续多日满足时只在**首日**发信号（防"天天触发"）。
 已收编进框架：`from quant.signals import cross_down`。
 
@@ -303,4 +460,4 @@ mpf.plot(df, type='candle', style=my_style, volume=True,
 | 轮子 | 说明 |
 |---|---|
 | ~~calc_metrics~~ | ✅ 已由 quant/metrics.py 补上（2026-07-25，plans/07）：年化/回撤/夏普/卡玛/胜率/盈亏比 |
-| 基准对比画图 | 策略净值 vs 基准净值归一化对比图（目前散落在 quote.py 的 _plot_return_compare） |
+| 基准对比画图 | 策略净值 vs 基准净值归一化对比图。目前**三处重复实现**：`quote.py:_plot_return_compare`、`analysis/analyze_dividend_financing.py:report_and_plot`、`analysis/analyze_grid_etf.py:plot` → 抽成 `quant/plot_compare_bench.py` 一个函数（已登记 plans/18） |

@@ -27,6 +27,13 @@
 3. 计算绩效指标（年化、回撤、夏普等）时，口径以 [Knowledge/metrics.md](Knowledge/metrics.md) 为准。
 4. 涉及数据源、复权、T+1、涨跌停等交易规则时，参考 [Knowledge/data_sources.md](Knowledge/data_sources.md)。
 5. 设计任何**卖出/离场规则**（止盈、止损、移动止盈）时，参考 [Knowledge/exit_rules.md](Knowledge/exit_rules.md)——里面有真实数据模拟结论和纪律模板。
+6. **回测一律走框架，不要在分析脚本里另写循环**：单标的用 `quant/engine.py`（策略给
+   入场/离场两个判断）；多标的组合用 `quant/portfolio.py`（策略给一个决策函数
+   `decide_fn(ctx) -> {标的: 带符号金额}`，正=买入金额、负=卖出金额，见 [quant/rebalance.py](quant/rebalance.py)）。
+7. **用户丢来一篇网文策略（知乎/公众号）时，按 [Knowledge/strategy_translation.md](Knowledge/strategy_translation.md)
+   的流程走**：产出物只有一个策略文件 + 注册两行，run.py 改一行名字就能跑；
+   规则歧义显式披露、参数照抄原文不许"顺手调好"；确实塞不进框架的（盘中触价/横截面选股/
+   非日频）先说明原因再另写 analysis 脚本。
 
 ## 文档维护规则
 - **计划管理**：每个开发任务在 [plans/](plans/) 建计划文件并登记索引；进度只改 plans，不改本文件
@@ -50,6 +57,7 @@
   （唯一例外：2026-07-25 demo.csv 移入 data/，只同步了 6 处路径字符串，逻辑一行未动）
 - 数据统一存 `data/` 目录（CSV 缓存），列名统一：`date, open, high, low, close, volume`
 - 快速查行情（含"现在腾讯多少钱"这类问题）：**先跑 `python quote.py <名称或代码>`**，别手写临时查询代码
+- 问"某只基金能不能买 / 限购多少"：**先跑 `python fund_limit.py <关键词>`**（QDII 限额天天变，别引用文档里的旧数字）
 - 写代码取数一律走 [fetch_data.py](fetch_data.py) 的轮子（`fetch_daily` / `fetch_fund_nav` / `fetch_spot_bar`），不要散落地直接调 akshare/requests
 
 ## 目录结构
@@ -67,22 +75,46 @@ lianghuaLearn/
 │   ├── exit_rules.md             ← 离场规则（止盈/移动止盈，含真实模拟结论）
 │   ├── metrics.md                ← 绩效指标标准算法
 │   ├── strategy_fit.md           ← 策略×标的人格匹配矩阵（选策略前必读）
-│   └── zhihu/                    ← 网文策略验证案例（吃超跌恐慌修复策略.md）
-├── run.py                        ← ⭐ 回测实验台：日常唯一要改的文件（改标的+策略名两行；单策略出文字报告+买卖点图，策略名单出比选图）
+│   ├── strategy_translation.md   ← ⭐ 网文 → 策略文件的固定流程（拿到知乎文先看这个）
+│   └── zhihu/                    ← 网文原文 + 落成物对照表（zhihu/README.md：文章↔策略文件↔能否实盘）
+├── run.py                        ← ⭐ 回测实验台：日常唯一要改的文件
+│                                    单标的模式：改标的+策略名两行（文字报告+买卖点图）
+│                                    组合模式：策略名写组合名即自动切换（plans/17）
+│                                    两种模式写名单都进比选模式
 ├── quant/                        ← 回测框架包（plans/07，分层：数据→指标→策略→引擎→评估）
 │   ├── data.py                   ← ① 取数契约（缓存→自动下载+体检；基金净值模式）
 │   ├── indicators.py             ← ② 指标纯函数（MA/RSI/BIAS/MACD/KDJ/BOLL）
 │   ├── signals.py                ← ③ 入场信号库（6 个超跌信号 + cross_down）
 │   ├── exits.py                  ← ③ 离场：ExitSpec 参数工厂 + exit_below_ma/exit_trailing
+│   ├── rebalance.py               ← ③ 组合决策函数工厂（阈值再平衡/买入持有/定期再平衡）
+│   ├── grid.py                    ← ③ 网格决策函数工厂（日频近似版，plans/19；盘中口径见 analysis/analyze_grid_etf.py）
+│   ├── adapter.py                 ← ③ 择时策略 → 组合决策函数适配器（plans/20：规则只有一份，能同图比净值）
 │   ├── engine.py                 ← ④ 事件循环（T+1 次日成交）+ assert_no_lookahead 门禁
+│   ├── portfolio.py              ← ④ 组合引擎（plans/17：decide_fn(ctx)→每只买卖金额，T+1 成交；
+│   │                                 plans/23：逐日分腿记损益，改仓即写"上一段各腿赚亏"进成交日志）
+│   ├── portfolio_data.py         ← ④ 组合取数/日期对齐/PortfolioContext 今日快照
+│   ├── portfolio_fill.py         ← ④ 组合订单撮合（先卖后买/不透支不卖空/双边成本）
 │   ├── metrics.py / report.py    ← ⑤ 绩效计算 / 报告（对比表/参数扰动/样本量警报）
+│   ├── attribution.py            ← ⑤ 收益归因计算（plans/23：钱是哪条腿赚的，金额法+守恒断言）
+│   ├── report_attribution.py     ← ⑤ 归因报告（总账表默认进每次组合回测 + 分段明细打印）
+│   ├── report_portfolio.py       ← ⑤ 组合报告总装（本策略 vs 不再平衡对照 vs 基准 + 阈值敏感性 + 归因）
+│   ├── report_portfolio_parts.py ← ⑤ 组合报告零件（绩效行/成交明细/权重漂移/敏感性扫描）
 │   ├── plot.py                   ← ⑤ 买卖点标注图（run.py 每次回测自动产出 PNG）
 │   ├── plot_compare.py           ← ⑤ 策略比选图（STRATEGY 给名单时：n 价格子图 + 共享净值图）
-│   └── strategies/               ← ③ 策略库：一套打法一个文件 + __init__.py 注册表
+│   ├── plot_attribution.py       ← ⑤ 归因图零件（各成分累计贡献曲线，含合计对账线）
+│   ├── plot_portfolio.py         ← ⑤ 组合图（净值/权重漂移+调仓点/各腿累计贡献/再平衡净贡献 + 比选图）
+│   ├── strategies/               ← ③ 单标的策略库：一套打法一个文件 + __init__.py 注册表
+│   └── portfolios/               ← ③ 组合配方库：一个配方一个文件 + __init__.py 注册表
 ├── test_framework.py             ← 框架主测试：v3 逐笔回归 + 因果门禁 + 数据契约（全绿才算可信）
+├── test_portfolio.py             ← 组合引擎测试（plans/17：账目/T+1/成本/不透支不卖空/注册表
+│                                    + plans/23：分腿归因守恒，共 10 项）
 ├── archive/                      ← 冻结的历史实验脚本（知乎 v1~v4，一行不改，见 archive/README.md）
-├── fetch_data.py                 ← 数据获取轮子（股票双源容灾 + 基金净值 + 港股当日快照）
+├── fetch_data.py                 ← 数据获取轮子（股票双源容灾 + 基金净值 + 港股当日快照
+│                                    + 基金申购状态/限额 fetch_fund_purchase
+│                                    + 全市场分红/融资三表 + 逐股 IPO 补全 fetch_ipo_amount，
+│                                    缓存含 data/dividend_financing/）
 ├── quote.py                      ← 自助查询工具：名称/代码 → 最近数据 + 图（用户随手用）
+├── fund_limit.py                 ← 自助查限购：关键词 → 申购状态/日限额/按公司去重的叠加上限
 ├── git_gui_tool.py               ← Git 弹窗小工具（tkinter，免记 git 命令）
 ├── plot_kline.py                 ← 读缓存 CSV 画 K 线/收盘曲线 PNG
 ├── analysis/                     ← 分析脚本目录：一个计划一个可重跑 analyze_*.py（见 analysis/README.md）

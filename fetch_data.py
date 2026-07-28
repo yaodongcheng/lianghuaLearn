@@ -277,6 +277,41 @@ def fetch_fund_rank(code):
         return None
 
 
+def fetch_fund_purchase(keyword=None, force_refresh=False):
+    """全市场场外基金的【申购状态 + 日累计限额】快照（东财 fund_purchase_em）。
+
+    为什么需要这个轮子：QDII 基金常年受外汇额度限制，"回测跑得好"和"买得进去"是
+    两件事（见 Knowledge/funds.md 四节）。限额天天变，任何写死的数字都会过期，
+    所以每次要落地一只基金前先查一遍。
+
+    参数：keyword 基金简称关键词（如 "纳斯达克"），None = 返回全市场
+    返回列：code, name, status(申购状态), min_buy(购买起点元), day_limit(日累计限额元), fee
+        ⚠ day_limit=0 通常表示"接口没给限额"（多为机构/特定份额），不等于不限购；
+        真正能不能买以 status 为准（开放申购 / 限大额 = 能买，暂停申购 = 买不了）。
+    缓存：当天一份（data/fund_purchase.csv），跨天自动重取。
+    """
+    cache = DATA_DIR / "fund_purchase.csv"
+    fresh = cache.exists() and time.strftime("%Y-%m-%d") == time.strftime(
+        "%Y-%m-%d", time.localtime(cache.stat().st_mtime))
+    if fresh and not force_refresh:
+        out = pd.read_csv(cache, dtype={"code": str})
+    else:
+        df = ak.fund_purchase_em()
+        out = pd.DataFrame({
+            "code": df["基金代码"].astype(str).str.zfill(6),
+            "name": df["基金简称"],
+            "status": df["申购状态"],
+            "min_buy": pd.to_numeric(df["购买起点"], errors="coerce"),
+            "day_limit": pd.to_numeric(df["日累计限定金额"], errors="coerce"),
+            "fee": pd.to_numeric(df["手续费"], errors="coerce"),
+        })
+        out.to_csv(cache, index=False)
+        print(f"✓ 申购状态表已更新：{len(out)} 只（存 {cache.name}）")
+    if keyword:
+        out = out[out["name"].str.contains(keyword, na=False)]
+    return out.reset_index(drop=True)
+
+
 def fetch_spot_bar(symbol="00700"):
     """
     拉港股【当日】实时快照，组装成一根日 K（6 列格式同 fetch_daily）。
@@ -329,6 +364,154 @@ def check_daily(df, name=""):
     for idx in top.index:
         print(f"  {df['date'][idx]:%Y-%m-%d}  {ret[idx]:+.1%}    "
               f"收 {df['close'][idx - 1]:.2f} → {df['close'][idx]:.2f}")
+
+
+# ============================================================
+# 分红 / 融资全市场数据（计划 16，策略"分红融资比"的数据底座）
+# ============================================================
+# 口径教学：
+# - 分红表（stock_fhps_em，按报告期查）：现金分红比例 = 每 10 股派 X 元（税前），
+#   分红总额 = X/10 × 当期总股本。可查 2000 年以来的年报(1231)/中报(0630)。
+# - 融资三表：IPO（2010 年起）+ 增发（2010 年起）+ 配股（1991 年起）。
+#   注意单位不同：IPO 发行总数=万股，增发/配股=股——换算已在代码里注明。
+# - 已知缺口（回测报告必须披露）：2010 年前 IPO/增发缺失 → 老股融资被低估、
+#   分红融资比被高估（方向性偏差：更偏向选入老牌分红股）。
+DIVFIN_DIR = DATA_DIR / "dividend_financing"
+
+
+def fetch_dividend_table(period, force_refresh=False):
+    """拉取全市场某报告期的分红配送表（东财 stock_fhps_em），缓存到 CSV。
+
+    参数：period 报告期 "yyyymmdd"——年报 "20201231"，中报 "20200630"。
+    返回列：code, name, div_per_10(每10股派息元), total_shares(总股本), ex_date(除权除息日)
+    ——每笔分红的"金额与日期"都在这里，point-in-time 选股按 ex_date 过滤即可。
+    """
+    DIVFIN_DIR.mkdir(exist_ok=True)
+    cache = DIVFIN_DIR / f"fhps_{period}.csv"
+    if cache.exists() and not force_refresh:
+        return pd.read_csv(cache, parse_dates=["ex_date"], dtype={"code": str})
+    df = ak.stock_fhps_em(date=period)
+    out = pd.DataFrame({
+        "code": df["代码"].astype(str).str.zfill(6),
+        "name": df["名称"],
+        "div_per_10": pd.to_numeric(df["现金分红-现金分红比例"], errors="coerce"),
+        "total_shares": pd.to_numeric(df["总股本"], errors="coerce"),
+        "ex_date": pd.to_datetime(df["除权除息日"], errors="coerce"),
+    })
+    out = out.dropna(subset=["div_per_10", "total_shares"])
+    out = out[out["div_per_10"] > 0]  # 只留真金白银的现金分红（送转股不算回馈现金）
+    out.to_csv(cache, index=False)
+    print(f"✓ 分红表 {period}：{len(out)} 只有现金分红（存 {cache.name}）")
+    return out
+
+
+def fetch_financing_tables(force_refresh=False):
+    """拉取全市场融资三表（IPO/增发/配股），统一成 (code, date, amount) 长表。
+
+    amount = 该次从股民手中募走的钱（元）。三表合并返回一个 DataFrame，
+    多一列 kind 区分来源（ipo/secondary/rights），便于审计。
+    """
+    DIVFIN_DIR.mkdir(exist_ok=True)
+    cache = DIVFIN_DIR / "financing_all.csv"
+    if cache.exists() and not force_refresh:
+        return pd.read_csv(cache, parse_dates=["date", "list_date"],
+                           dtype={"code": str})
+
+    parts = []
+    # —— IPO：发行总数(万股) × 发行价(元) ——
+    ipo = ak.stock_xgsglb_em(symbol="全部股票")
+    ipo_amt = (pd.to_numeric(ipo["发行总数"], errors="coerce") * 1e4
+               * pd.to_numeric(ipo["发行价格"], errors="coerce"))
+    parts.append(pd.DataFrame({
+        "code": ipo["股票代码"].astype(str).str.zfill(6),
+        "date": pd.to_datetime(ipo["上市日期"], errors="coerce"),
+        "amount": ipo_amt, "kind": "ipo",
+        "list_date": pd.to_datetime(ipo["上市日期"], errors="coerce"),
+    }))
+    # —— 增发：发行总数(股) × 发行价 ——
+    zf = ak.stock_qbzf_em()
+    zf_amt = (pd.to_numeric(zf["发行总数"], errors="coerce")
+              * pd.to_numeric(zf["发行价格"], errors="coerce"))
+    parts.append(pd.DataFrame({
+        "code": zf["股票代码"].astype(str).str.zfill(6),
+        "date": pd.to_datetime(zf["发行日期"], errors="coerce"),
+        "amount": zf_amt, "kind": "secondary", "list_date": pd.NaT,
+    }))
+    # —— 配股：配股数量(股) × 配股价 ——
+    pg = ak.stock_pg_em()
+    pg_amt = (pd.to_numeric(pg["配股数量"], errors="coerce")
+              * pd.to_numeric(pg["配股价"], errors="coerce"))
+    parts.append(pd.DataFrame({
+        "code": pg["股票代码"].astype(str).str.zfill(6),
+        "date": pd.to_datetime(pg["股权登记日"], errors="coerce"),
+        "amount": pg_amt, "kind": "rights", "list_date": pd.NaT,
+    }))
+
+    out = (pd.concat(parts, ignore_index=True)
+             .dropna(subset=["amount", "date"]))
+    out = out[out["amount"] > 0]
+    # 合理性体检：单笔募资应在千万~几千亿之间，超出说明单位搞错了
+    lo, hi = out["amount"].min(), out["amount"].max()
+    assert lo > 1e6 and hi < 1e12, f"募资额量级异常：{lo:.0f} ~ {hi:.0f}，检查单位"
+    out.to_csv(cache, index=False)
+    print(f"✓ 融资三表：IPO {sum(out['kind'] == 'ipo')} 笔、增发 "
+          f"{sum(out['kind'] == 'secondary')} 笔、配股 {sum(out['kind'] == 'rights')} 笔"
+          f"（存 {cache.name}）")
+    return out
+
+
+def fetch_ipo_amount(codes, as_of=None):
+    """逐股补全 IPO 募资额（元），补 fetch_financing_tables 里 2010 年前的缺口。
+
+    参数：codes 股票代码列表；as_of 只认上市日 ≤ 该日的募资（防未来函数，None=不限）。
+    返回 (ok: {code: 募资额(元)}, failed: [code])——**失败的单独返回，绝不当 0**。
+
+    为什么这个轮子必须带缓存 + 重试 + 显式失败（2026-07-27 实测踩坑）：
+    这是网页逐股接口（stock_ipo_summary_cninfo），偶发失败。初版把失败静默当 0，
+    该股融资就只剩配股零头，分红融资比虚高几十倍（建设银行：真 IPO 571 亿，
+    失败时只剩 2010 年配股 22 亿，比率从 ~14 虚高到 ~359，排名从进不了榜跳到第 1）
+    ——**静默的数据失败不是缺失，是篡改**。所以：
+    ① 成功结果缓存 audit_ipo.csv（跨次重跑结果一致=可复现）；
+    ② 失败重试 3 次；③ 仍失败的进 failed，调用方自行剔除（宁缺毋假）。
+    注意 amt=0（查到了但金额为 0/上市日晚于 as_of）也会入缓存——那是确定结论，别重查。
+    """
+    DIVFIN_DIR.mkdir(exist_ok=True)
+    cache = DIVFIN_DIR / "audit_ipo.csv"
+    as_of = pd.Timestamp(as_of) if as_of is not None else None
+    hit = {}
+    if cache.exists():
+        kdf = pd.read_csv(cache, dtype={"code": str})
+        known = dict(zip(kdf["code"], kdf["ipo_amount"]))
+        hit = {c: known[c] for c in codes if c in known}
+    todo = [c for c in codes if c not in hit]
+    result, failed = dict(hit), []
+    for i, code in enumerate(todo):
+        amt = None
+        for _attempt in range(3):                    # 网页接口偶发失败，重试 3 次
+            try:
+                df = ak.stock_ipo_summary_cninfo(symbol=code)
+                a = pd.to_numeric(df["募集资金净额"], errors="coerce").iloc[0]
+                d = pd.to_datetime(df["上市日期"], errors="coerce").iloc[0]
+                # 逐股接口单位是【万元】；上市日晚于选股日的募资不算（防未来函数）
+                ok_date = as_of is None or (pd.notna(d) and d <= as_of)
+                amt = a * 1e4 if pd.notna(a) and ok_date else 0.0
+                break
+            except Exception:
+                time.sleep(1)
+        if amt is None:
+            failed.append(code)
+        else:
+            result[code] = amt
+        if (i + 1) % 50 == 0:
+            print(f"  IPO 补全进度 {i + 1}/{len(todo)}（缓存命中 {len(hit)} 只）")
+    if todo:                                          # 增量写缓存
+        new = pd.DataFrame({"code": list(result.keys()),
+                            "ipo_amount": list(result.values())})
+        old = (pd.read_csv(cache, dtype={"code": str}) if cache.exists()
+               else pd.DataFrame({"code": [], "ipo_amount": []}))
+        (pd.concat([old, new]).drop_duplicates("code", keep="last")
+           .to_csv(cache, index=False))
+    return result, failed
 
 
 if __name__ == "__main__":
