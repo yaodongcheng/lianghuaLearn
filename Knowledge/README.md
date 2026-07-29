@@ -5,7 +5,7 @@
 | 文件 | 内容 | 什么时候用 |
 |---|---|---|
 | [backtest_checklist.md](backtest_checklist.md) | 回测自检清单：未来函数、过拟合、交易成本、T+1、涨跌停、复权、幸存者偏差 | ⭐ 每次写完策略/回测代码后逐项对照 |
-| [technical_indicators.md](technical_indicators.md) | MACD、KDJ、MA、RSI、BOLL 等指标的标准公式与常见用法 | 实现或修改任何指标之前 |
+| [technical_indicators.md](technical_indicators.md) | MACD、KDJ、MA、RSI、BOLL 等指标的标准公式与常见用法 + 直觉理解（位移/速度/加速度类比、KDJ 赛道位置、超买超卖纪律） | 实现或修改任何指标之前；想搞懂"指标到底在量什么"时 |
 | [data_sources.md](data_sources.md) | akshare 数据接口、复权概念、A股/港股交易规则 | 获取数据、处理数据时 |
 | [funds.md](funds.md) | 场外基金（支付宝渠道）交易规则、费用、对策略设计的影响 | ⭐ 做任何基金相关策略前必读 |
 | [exit_rules.md](exit_rules.md) | 止盈/止损/移动止盈的区别、真实数据模拟结论、离场纪律模板 | ⭐ 设计任何"卖出"规则前必读 |
@@ -13,6 +13,11 @@
 | [strategy_fit.md](strategy_fit.md) | 策略×标的人格匹配矩阵：均值回复策略配震荡标的、趋势策略配趋势标的，错配比没有策略更糟 | ⭐ 给任何标的选策略前必读 |
 | [strategy_translation.md](strategy_translation.md) | 网文策略 → 可跑策略文件的固定流程：选契约决策树、口述规则机械化、模板、验收步骤、落不进框架的三类 | ⭐ 拿到任意一篇知乎/公众号策略文时 |
 | [metrics.md](metrics.md) | 年化收益、最大回撤、夏普比率等绩效指标的标准算法与"什么算好"的直觉参考 | 评估回测结果时 |
+| [volume_price.md](volume_price.md) | 量价关系：经典四象限/天量地价/量价背离 + 现实校准（最拥挤赛道，口诀必须回测验证） | 用量价信号前；理解"为什么涨要放量" |
+| [timing_signals.md](timing_signals.md) | 择时买卖信号：趋势跟随 vs 均值回复两大门派 + 背离 + 本项目实测汇总（金叉死叉 8 年不赚钱等） | 写任何入场/离场信号前；课程"买卖口诀"拿来用时 |
+| [stock_selection.md](stock_selection.md) | 选股原则：基本面/技术面/题材/负面清单 + 两个选股专属回测硬坑 + "指数=公开选股规则"的转化 | 想"买什么"时；读懂指数编制和主动基金经理 |
+| [wave_gann.md](wave_gann.md) | 波浪理论/江恩理论速览 + 为什么无法机械回测（不可证伪/坐标依赖）+ 可检验成分 | 听到"数浪/时间窗口/斐波那契点位"类说法时先对照祛魅 |
+| [bull_bear_balance.md](bull_bear_balance.md) | 多空力量对比流派：资金流/筹码分布/市场广度/持仓情绪/订单流 + "全是代理指标"的现实校准 | 听到"主力净流入/筹码峰"类说法时；想用价格以外的数据时 |
 | [zhihu/README.md](zhihu/README.md) | ⭐ 网文原文 ↔ 本项目落成物（策略/配方文件名）对照表 + 能否实盘 | 想跑某篇知乎文的策略、或搞不清某个策略文件出处时 |
 | [zhihu/吃超跌恐慌修复策略.md](zhihu/吃超跌恐慌修复策略.md) | 知乎"抄底指数"策略的完整验证案例：原作者观点 → 三轮数据实测 → 结论；含超跌指标工具箱、"止盈匹配利润来源"等产出 | 学习如何验证网文策略；用超跌指标前 |
 

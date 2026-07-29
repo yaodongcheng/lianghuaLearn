@@ -74,6 +74,11 @@ lianghuaLearn/
 │   ├── funds.md                  ← 场外基金规则（支付宝渠道必读）
 │   ├── exit_rules.md             ← 离场规则（止盈/移动止盈，含真实模拟结论）
 │   ├── metrics.md                ← 绩效指标标准算法
+│   ├── volume_price.md           ← 量价关系经典框架 + 现实校准（口诀须回测验证）
+│   ├── timing_signals.md         ← 择时信号总览：趋势/均值回复两派 + 本项目实测汇总
+│   ├── stock_selection.md        ← 选股原则三派 + 负面清单 + "指数=公开选股规则"
+│   ├── wave_gann.md              ← 波浪/江恩速览 + 为何无法机械回测（不可证伪）
+│   ├── bull_bear_balance.md      ← 多空力量流派：资金流/筹码/广度/订单流（全是代理指标）
 │   ├── strategy_fit.md           ← 策略×标的人格匹配矩阵（选策略前必读）
 │   ├── strategy_translation.md   ← ⭐ 网文 → 策略文件的固定流程（拿到知乎文先看这个）
 │   └── zhihu/                    ← 网文原文 + 落成物对照表（zhihu/README.md：文章↔策略文件↔能否实盘）
