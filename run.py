@@ -45,8 +45,7 @@ EXIT_OVERRIDE = None
 PORTFOLIO_OVERRIDE = None
 # ============================================
 
-START = "2018-07-01"      # 单标的回测起点（数据从 2018-01 起取，之前是指标预热段）
-PF_START = "2018-07-01"   # 组合回测起点；None = 全部成分都有数据的首日
+START = "2026-07-01"      # 回测起点（单标的和组合共用）；None = 组合模式自动取全部成分都有数据的首日
 COST = 0.001              # 双边成本各 0.1%（ETF 无印花税口径）
 INITIAL = 10000.0         # 组合模式初始资金（元）
 
@@ -84,7 +83,7 @@ if __name__ == "__main__":
                              "组合要换规则请用 PORTFOLIO_OVERRIDE")
         if len(names) == 1:
             from quant.report_portfolio import run_portfolio_experiment
-            run_portfolio_experiment(names[0], start=PF_START, cost=COST,
+            run_portfolio_experiment(names[0], start=START, cost=COST,
                                      initial_cash=INITIAL,
                                      decide_override=PORTFOLIO_OVERRIDE)
         else:
@@ -94,7 +93,7 @@ if __name__ == "__main__":
                                  f"请把 STRATEGY 改成单个组合名分别跑，或在 "
                                  f"quant/portfolios/ 里把新规则登记成一个配方再进名单")
             from quant.report_portfolio import compare_portfolio_experiment
-            compare_portfolio_experiment(names, start=PF_START, cost=COST,
+            compare_portfolio_experiment(names, start=START, cost=COST,
                                          initial_cash=INITIAL)
     else:                                           # ===== 单标的模式 =====
         if PORTFOLIO_OVERRIDE is not None:

@@ -12,8 +12,9 @@ from quant.portfolios.longterm_balance import PORTFOLIO as _lt
 from quant.portfolios.longterm_balance_oil import PORTFOLIO as _lt_oil
 from quant.portfolios.longterm_balance_oilstock import PORTFOLIO as _lt_oils
 from quant.portfolios.longterm_balance_v1 import PORTFOLIO as _lt1
+from quant.portfolios.dividend_bond_balance import PORTFOLIO as _div_bond
 
-_ALL = [_lt, _lt1, _lt_oil, _lt_oils, _g2, _grid, _div, _br]
+_ALL = [_lt, _lt1, _lt_oil, _lt_oils, _g2, _grid, _div, _br, _div_bond]
 REGISTRY = {p.name: p for p in _ALL}
 
 
