@@ -30,6 +30,7 @@
 | analyze_recent_drop.py | （诊断） | "最近这一波在亏钱"归因：分年+滚动窗口切片 / 成分涨跌 / 当前回撤位置 / 最近调仓，**分清"市场在跌"还是"策略坏了"** |
 | analyze_oil_in_balance.py | 21 | 石油该不该进 longterm_balance：相关性矩阵 / 单资产质量 / 分年拆解 / 石油权重扫描 |
 | compare_index_bias.py | （早期） | bias_oversold 策略 × 六大宽基指数横向对比 |
+| analyze_hongli_valuation.py | 24 实盘 | 中证红利估值体检：点位/股息率/市盈率 + 贵贱阈值（股息率 <3.5% 触发减速讨论），每月 5 号检查复跑 |
 
 ## 什么情况才该新写脚本（2026-07-28 补，见 CLAUDE.md 规则 6/7）
 

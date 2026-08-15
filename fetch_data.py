@@ -514,6 +514,35 @@ def fetch_ipo_amount(codes, as_of=None):
     return result, failed
 
 
+def fetch_index_daily_tx(code):
+    """指数日线全历史（腾讯源），返回统一列名 date/open/high/low/close/volume。
+
+    为什么需要第三个源（2026-08-06 实测踩坑）：fetch_daily 的双源里，东财在企业
+    网络下被防火墙间歇断连（当天 2 连败），新浪对部分中证指数只回传多年前的旧数据
+    ——旧缓存还在、看着"下载成功"，数据其实是脏的。腾讯源能取到 2005 年至今全量。
+    用量小不落缓存，每次现拉；个股日线仍优先 fetch_daily（要复权和缓存）。
+    """
+    df = ak.stock_zh_index_daily_tx(symbol=f"sh{code}")
+    df["volume"] = df["amount"]          # 腾讯列名是 amount，补成项目统一列名
+    return df[["date", "open", "high", "low", "close", "volume"]]
+
+
+def fetch_index_value_csindex(code):
+    """指数估值（中证指数公司官网）：市盈率1/2、股息率1/2。
+
+    注意：官网这份 Excel **只含近 20 个交易日**，没有长历史分位可算——用前
+    先看行数，别拿它算"历史分位"（2026-08-06 实测踩坑，20 天窗口的分位是
+    假指标）。对红利指数，"贵不贵"看股息率不点位（买红利=买分红）：估值判断
+    用经验阈值（股息率 ≥4.5% 正常偏高 / <3.5% 偏贵），见
+    analysis/analyze_hongli_valuation.py 头注释。
+    官网页脚说明：市盈率1/股息率1 按最近年报口径（静态），2 号按近 12 个月
+    滚动（动态、更贴当前）。列名为中文（日期/市盈率1/市盈率2/股息率1/股息率2）。
+    """
+    df = ak.stock_zh_index_value_csindex(symbol=code)
+    df["日期"] = pd.to_datetime(df["日期"])
+    return df
+
+
 if __name__ == "__main__":
     # ===== 验证测试：腾讯控股 00700.HK，2020-01-01 至今，前复权 =====
     # 港股一年约 246~250 个交易日，2020 至今约 6.5 年 → 预期 1600 行上下
